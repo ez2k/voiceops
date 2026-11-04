@@ -14,6 +14,8 @@ PC 연결형 휴대폰 ⇄ 블루투스 HFP ⇄ ESP32-WROOM-32 ⇄ USB ⇄ PC �
 | 통화 기록 | 시리얼 로그 (대화·접수 메모) | WAV 녹음 + 대화록 + 접수 메모 파일 |
 | 상태 | **실험 단계** (아래 "확인할 점") | 기능 완성, 실기기 검증 전 |
 
+**웹 설치·설정 페이지: https://ez2k.github.io/voiceops/** (PC의 크롬·엣지)
+
 두 펌웨어는 블루투스 통화 부분(`components/phone`)을 같이 씁니다.
 
 ---
@@ -147,4 +149,4 @@ web/                     웹 설치·설정 페이지 (ESP Web Tools + Web Seria
 - `cd web/test && npm install && npm test` — 웹 설정 페이지를 가짜 기기로 (불러오기·저장·지시문 한글 왕복)
 - `cd bridge && pip install pytest && python -m pytest` — PC 브리지 전체 (C 프레임 코덱 교차 검증, 가짜 Gemini 세션)
 
-이 환경에서는 ESP-IDF 빌드를 돌릴 수 없어 **펌웨어는 컴파일·실기기 검증 전**입니다. 첫 빌드는 GitHub Actions(또는 `idf.py build`)에서 확인됩니다.
+두 펌웨어 모두 GitHub Actions(ESP-IDF v6.1)에서 경고 없이 빌드되고, 위 테스트도 CI에서 돌아갑니다 (`.github/workflows/checks.yml`). **실제 보드·폰·Gemini 통화는 아직 검증 전**입니다.
