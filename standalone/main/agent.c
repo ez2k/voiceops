@@ -263,6 +263,24 @@ static void handle_phone(const agent_msg_t *m)
     }
 }
 
+/* 통화 중 5초마다: 메모리, Gemini 수신 속도, AI 음성 끊김 */
+static void log_call_stats(void)
+{
+    static uint32_t last_rx;
+    static TickType_t last_tick;
+    gemini_stats_t st;
+    gemini_get_stats(&st);
+    TickType_t now = xTaskGetTickCount();
+    uint32_t ms = (uint32_t)((now - last_tick) * portTICK_PERIOD_MS);
+    uint32_t rx = st.rx_bytes >= last_rx ? st.rx_bytes - last_rx : st.rx_bytes;
+    ESP_LOGI(TAG, "call stats: heap free=%u min=%u | gemini rx=%uKB/s buffered=%ums underruns=%u send_fails=%u",
+             (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)(ms ? rx / ms : 0), (unsigned)st.ai_buffered_ms, (unsigned)st.underruns,
+             (unsigned)st.send_fails);
+    last_rx = st.rx_bytes;
+    last_tick = now;
+}
+
 static void agent_task(void *arg)
 {
     agent_msg_t m;
@@ -272,7 +290,7 @@ static void agent_task(void *arg)
         check_auto_answer();
         if (s_ai_call && xTaskGetTickCount() - last_heap_log >= pdMS_TO_TICKS(HEAP_LOG_MS)) {
             last_heap_log = xTaskGetTickCount();
-            log_heap("during call");
+            log_call_stats();
         }
         if (!got) {
             continue;

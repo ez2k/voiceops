@@ -34,5 +34,5 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 
-# AI 음성이 밀릴 때 수신 쪽이 잠시 멈춰도 상대 음성 송신은 계속되게
-CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK=y
+# WebSocket 송수신은 한 잠금으로 직렬화한다 (기본값). 하나의 TLS 연결을 두 태스크가
+# 동시에 읽고 쓰면 안전하지 않다 — SEPARATE_TX_LOCK 을 켰을 때 송신이 막혀 연결이 끊겼다.

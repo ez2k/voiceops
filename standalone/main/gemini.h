@@ -44,5 +44,14 @@ size_t gemini_pull_ai_audio(uint8_t *pcm, size_t len);
 /* 아직 폰으로 나가지 않은 AI 음성 바이트 수 */
 size_t gemini_pending_ai_audio(void);
 
+typedef struct {
+    uint32_t rx_bytes;        /* 세션 시작 뒤 서버에서 받은 바이트 (AI 음성은 약 64KB/초 필요) */
+    uint32_t underruns;       /* AI 가 말하는 도중 음성이 바닥난 횟수 (네트워크가 못 따라옴) */
+    uint32_t send_fails;      /* 상대 음성 전송 실패 횟수 */
+    uint32_t ai_buffered_ms;  /* 아직 폰으로 안 나간 AI 음성 */
+} gemini_stats_t;
+
+void gemini_get_stats(gemini_stats_t *stats);
+
 /* 세션을 닫는다. WebSocket 태스크 안에서 부르면 안 된다. */
 void gemini_stop(void);

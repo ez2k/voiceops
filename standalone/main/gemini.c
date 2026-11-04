@@ -28,6 +28,7 @@
 #define SEND_CHUNK_BYTES   640     /* 8kHz 16bit 40ms */
 #define CALLER_BUF_BYTES   4096    /* 상대 음성 대기열 (약 0.25초) */
 #define AI_RING_BYTES      16000   /* AI 음성 대기열 (1초). 차면 서버 수신을 잠시 멈춘다 */
+#define PREBUFFER_BYTES    4800    /* 지터 버퍼: AI 음성을 0.3초 모은 뒤 내보내기 시작 (Wi-Fi 출렁임 흡수) */
 #define REST_BUF_BYTES     6144    /* 음성을 뺀 서버 메시지 JSON */
 #define TRANSCRIPT_MAX     400
 #define WS_SEND_TIMEOUT    pdMS_TO_TICKS(2000)
@@ -58,29 +59,40 @@ static bool s_has_carry;
 static char s_said_caller[TRANSCRIPT_MAX];
 static char s_said_ai[TRANSCRIPT_MAX];
 
+static volatile bool s_playing;    /* 지터 버퍼가 차서 AI 음성을 내보내는 중 */
+static volatile bool s_turn_done;  /* AI 의 말 한 턴이 끝났다 → 남은 음성은 문턱 아래여도 내보낸다 */
+static volatile uint32_t s_rx_bytes, s_underruns, s_send_fails;
+
 /* ---- 보내기 ---- */
 
+static void send_on(esp_websocket_client_handle_t client, const char *json, size_t len)
+{
+    if (esp_websocket_client_send_text(client, json, (int)len, WS_SEND_TIMEOUT) < 0) {
+        s_send_fails++;
+    }
+}
+
+/* 송신 태스크용: 세션이 닫히는 중에도 안전하게 */
 static void ws_send(const char *json, size_t len)
 {
     xSemaphoreTake(s_ws_lock, portMAX_DELAY);
     if (s_ws != NULL && esp_websocket_client_is_connected(s_ws)) {
-        if (esp_websocket_client_send_text(s_ws, json, (int)len, WS_SEND_TIMEOUT) < 0) {
-            ESP_LOGW(TAG, "send failed");
-        }
+        send_on(s_ws, json, len);
     }
     xSemaphoreGive(s_ws_lock);
 }
 
-static void send_json(cJSON *root)
+/* WebSocket 이벤트 처리 중에는 그 태스크의 client 로 바로 보낸다 (s_ws_lock 을 잡으면 송신 태스크와 서로 기다린다) */
+static void send_json(esp_websocket_client_handle_t client, cJSON *root)
 {
     char *text = cJSON_PrintUnformatted(root);
     if (text != NULL) {
-        ws_send(text, strlen(text));
+        send_on(client, text, strlen(text));
         cJSON_free(text);
     }
 }
 
-static void send_setup(void)
+static void send_setup(esp_websocket_client_handle_t client)
 {
     char *instructions = NULL;
     if (asprintf(&instructions, "%s\n\n## 이번 통화 정보\n- 상대 전화번호: %s\n",
@@ -102,7 +114,7 @@ static void send_setup(void)
     cJSON_AddObjectToObject(setup, "inputAudioTranscription");
     cJSON_AddObjectToObject(setup, "outputAudioTranscription");
 
-    send_json(root);
+    send_json(client, root);
     cJSON_Delete(root);
     free(instructions);
 }
@@ -143,6 +155,7 @@ static void ring_write_waiting(const uint8_t *data, size_t len)
 
 static void on_ai_audio_bytes(const uint8_t *bytes, size_t len, void *ctx)
 {
+    s_turn_done = false;  /* 새 음성이 오는 중 */
     int16_t out[48];
     size_t n_out = 0;
 
@@ -188,7 +201,7 @@ static void say_flush(void)
     }
 }
 
-static void handle_tool_calls(const cJSON *tool_call)
+static void handle_tool_calls(esp_websocket_client_handle_t client, const cJSON *tool_call)
 {
     cJSON *root = cJSON_CreateObject();
     cJSON *responses = cJSON_AddArrayToObject(cJSON_AddObjectToObject(root, "toolResponse"), "functionResponses");
@@ -232,11 +245,11 @@ static void handle_tool_calls(const cJSON *tool_call)
         cJSON_free(args_text);
     }
 
-    send_json(root);
+    send_json(client, root);
     cJSON_Delete(root);
 }
 
-static void handle_message(const char *json)
+static void handle_message(esp_websocket_client_handle_t client, const char *json)
 {
     cJSON *root = cJSON_Parse(json);
     if (root == NULL) {
@@ -247,7 +260,7 @@ static void handle_message(const char *json)
     if (cJSON_GetObjectItemCaseSensitive(root, "setupComplete") != NULL) {
         ESP_LOGI(TAG, "session ready");
         s_ready = true;
-        ws_send(GEMINI_GREETING_JSON, strlen(GEMINI_GREETING_JSON));
+        send_on(client, GEMINI_GREETING_JSON, strlen(GEMINI_GREETING_JSON));
     }
 
     const cJSON *sc = cJSON_GetObjectItemCaseSensitive(root, "serverContent");
@@ -258,6 +271,11 @@ static void handle_message(const char *json)
             pcm_ring_clear(&s_ai_audio);
             decimator_reset(&s_decim);
             s_has_carry = false;
+            s_playing = false;
+        }
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(sc, "generationComplete")) ||
+            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(sc, "turnComplete"))) {
+            s_turn_done = true;
         }
         say_append(s_said_caller, cJSON_GetObjectItemCaseSensitive(sc, "inputTranscription"));
         say_append(s_said_ai, cJSON_GetObjectItemCaseSensitive(sc, "outputTranscription"));
@@ -268,7 +286,7 @@ static void handle_message(const char *json)
 
     const cJSON *tool_call = cJSON_GetObjectItemCaseSensitive(root, "toolCall");
     if (tool_call != NULL) {
-        handle_tool_calls(tool_call);
+        handle_tool_calls(client, tool_call);
     }
 
     const cJSON *go_away = cJSON_GetObjectItemCaseSensitive(root, "goAway");
@@ -296,10 +314,11 @@ static void ws_event(void *arg, esp_event_base_t base, int32_t event_id, void *e
     switch (event_id) {
     case WEBSOCKET_EVENT_CONNECTED:
         ESP_LOGI(TAG, "connected, sending setup");
-        send_setup();
+        send_setup(d->client);
         break;
 
     case WEBSOCKET_EVENT_DATA:
+        s_rx_bytes += (uint32_t)d->data_len;
         if (d->op_code == WS_TRANSPORT_OPCODES_CLOSE) {
             /* 서버가 닫으며 이유를 알려 준다 (예: API 키 오류). 앞 2바이트는 상태 코드. */
             int text_len = d->data_len > 2 ? d->data_len - 2 : 0;
@@ -317,7 +336,7 @@ static void ws_event(void *arg, esp_event_base_t base, int32_t event_id, void *e
         if (d->fin && d->payload_offset + d->data_len >= d->payload_len) {
             const char *json = gs_end(&s_stream);
             if (json != NULL) {
-                handle_message(json);
+                handle_message(d->client, json);
             } else {
                 ESP_LOGW(TAG, "control part of message too large, skipped");
             }
@@ -376,6 +395,11 @@ esp_err_t gemini_start(const char *caller_number)
     s_has_carry = false;
     s_said_caller[0] = '\0';
     s_said_ai[0] = '\0';
+    s_playing = false;
+    s_turn_done = false;
+    s_rx_bytes = 0;
+    s_underruns = 0;
+    s_send_fails = 0;
 
     const esp_websocket_client_config_t cfg = {
         .uri = s_uri,
@@ -421,7 +445,30 @@ void gemini_push_caller_audio(const uint8_t *pcm, size_t len)
 
 size_t gemini_pull_ai_audio(uint8_t *pcm, size_t len)
 {
-    return pcm_ring_read(&s_ai_audio, pcm, len);
+    /* 지터 버퍼: 0.3초가 모이기 전에는 무음. 말 끝(턴 종료)의 짧은 꼬리는 바로 내보낸다. */
+    if (!s_playing) {
+        size_t have = pcm_ring_count(&s_ai_audio);
+        if (have < PREBUFFER_BYTES && !(s_turn_done && have > 0)) {
+            return 0;
+        }
+        s_playing = true;
+    }
+    size_t n = pcm_ring_read(&s_ai_audio, pcm, len);
+    if (n < len) {
+        s_playing = false;  /* 바닥났다 → 다시 모은다 */
+        if (!s_turn_done) {
+            s_underruns++;  /* 말하는 도중에 음성이 늦게 왔다 (네트워크가 못 따라옴) */
+        }
+    }
+    return n;
+}
+
+void gemini_get_stats(gemini_stats_t *st)
+{
+    st->rx_bytes = s_rx_bytes;
+    st->underruns = s_underruns;
+    st->send_fails = s_send_fails;
+    st->ai_buffered_ms = (uint32_t)(pcm_ring_count(&s_ai_audio) * 1000 / (GEMINI_CALL_RATE * 2));
 }
 
 size_t gemini_pending_ai_audio(void)
