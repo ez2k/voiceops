@@ -40,8 +40,9 @@ void wifi_start(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
 
     wifi_config_t cfg = {0};
-    strlcpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
-    strlcpy((char *)cfg.sta.password, password, sizeof(cfg.sta.password));
+    /* NUL 없이 꽉 채울 수 있는 필드다 (32자 SSID, 64자리 16진 PSK) — strlcpy 는 마지막 글자를 잘라 버린다 */
+    memcpy(cfg.sta.ssid, ssid, strnlen(ssid, sizeof(cfg.sta.ssid)));
+    memcpy(cfg.sta.password, password, strnlen(password, sizeof(cfg.sta.password)));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     ESP_ERROR_CHECK(esp_wifi_start());

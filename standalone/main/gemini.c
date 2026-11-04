@@ -63,6 +63,15 @@ static volatile bool s_playing;    /* 지터 버퍼가 차서 AI 음성을 내�
 static volatile bool s_turn_done;  /* AI 의 말 한 턴이 끝났다 → 남은 음성은 문턱 아래여도 내보낸다 */
 static volatile uint32_t s_rx_bytes, s_underruns, s_send_fails;
 
+static void fail_once(const char *why)
+{
+    s_ready = false;
+    if (!s_stopping && !s_failed) {
+        s_failed = true;
+        s_cb.on_failed(why);
+    }
+}
+
 /* ---- 보내기 ---- */
 
 static void send_on(esp_websocket_client_handle_t client, const char *json, size_t len)
@@ -92,31 +101,50 @@ static void send_json(esp_websocket_client_handle_t client, cJSON *root)
     }
 }
 
-static void send_setup(esp_websocket_client_handle_t client)
+static bool add_text_part(cJSON *parts, cJSON *text)
 {
-    char *instructions = NULL;
-    if (asprintf(&instructions, "%s\n\n## 이번 통화 정보\n- 상대 전화번호: %s\n",
-                 s_cfg.prompt, s_caller[0] ? s_caller : "알 수 없음") < 0) {
-        return;
+    cJSON *part = cJSON_CreateObject();
+    if (part == NULL || text == NULL || !cJSON_AddItemToObject(part, "text", text)) {
+        cJSON_Delete(part);
+        cJSON_Delete(text);
+        return false;
     }
+    return cJSON_AddItemToArray(parts, part);
+}
+
+/* 지시문은 복사하지 않고 가리키기만 한다 (PSRAM 이 없어 8KB 지시문 복사본도 부담). 이번 통화 정보는 별도 part. */
+static bool send_setup(esp_websocket_client_handle_t client)
+{
+    char model[80], call_info[96];
+    snprintf(model, sizeof(model), "models/%s", s_cfg.model);
+    snprintf(call_info, sizeof(call_info), "## 이번 통화 정보\n- 상대 전화번호: %s\n",
+             s_caller[0] ? s_caller : "알 수 없음");
 
     cJSON *root = cJSON_CreateObject();
     cJSON *setup = cJSON_AddObjectToObject(root, "setup");
-    char model[80];
-    snprintf(model, sizeof(model), "models/%s", s_cfg.model);
-    cJSON_AddStringToObject(setup, "model", model);
     cJSON *gen = cJSON_AddObjectToObject(setup, "generationConfig");
-    cJSON_AddItemToArray(cJSON_AddArrayToObject(gen, "responseModalities"), cJSON_CreateString("AUDIO"));
-    cJSON *part = cJSON_CreateObject();
-    cJSON_AddStringToObject(part, "text", instructions);
-    cJSON_AddItemToArray(cJSON_AddArrayToObject(cJSON_AddObjectToObject(setup, "systemInstruction"), "parts"), part);
-    cJSON_AddItemToObject(setup, "tools", cJSON_Parse(GEMINI_TOOLS_JSON));
-    cJSON_AddObjectToObject(setup, "inputAudioTranscription");
-    cJSON_AddObjectToObject(setup, "outputAudioTranscription");
-
-    send_json(client, root);
+    cJSON *modalities = cJSON_AddArrayToObject(gen, "responseModalities");
+    cJSON *parts = cJSON_AddArrayToObject(cJSON_AddObjectToObject(setup, "systemInstruction"), "parts");
+    cJSON *tools = cJSON_Parse(GEMINI_TOOLS_JSON);
+    bool ok = parts != NULL && modalities != NULL &&
+              cJSON_AddStringToObject(setup, "model", model) != NULL &&
+              cJSON_AddItemToArray(modalities, cJSON_CreateString("AUDIO")) &&
+              add_text_part(parts, cJSON_CreateStringReference(s_cfg.prompt)) &&
+              add_text_part(parts, cJSON_CreateString(call_info)) &&
+              tools != NULL && cJSON_AddItemToObject(setup, "tools", tools) &&
+              cJSON_AddObjectToObject(setup, "inputAudioTranscription") != NULL &&
+              cJSON_AddObjectToObject(setup, "outputAudioTranscription") != NULL;
+    if (!ok && cJSON_GetObjectItem(setup, "tools") != tools) {
+        cJSON_Delete(tools);  /* 트리에 붙지 못했으면 따로 지운다 */
+    }
+    char *text = ok ? cJSON_PrintUnformatted(root) : NULL;
     cJSON_Delete(root);
-    free(instructions);
+    if (text == NULL) {
+        return false;
+    }
+    send_on(client, text, strlen(text));
+    cJSON_free(text);
+    return true;
 }
 
 /* 상대 음성을 40ms 씩 모아 보내는 태스크 */
@@ -298,15 +326,6 @@ static void handle_message(esp_websocket_client_handle_t client, const char *jso
     cJSON_Delete(root);
 }
 
-static void fail_once(const char *why)
-{
-    s_ready = false;
-    if (!s_stopping && !s_failed) {
-        s_failed = true;
-        s_cb.on_failed(why);
-    }
-}
-
 static void ws_event(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     const esp_websocket_event_data_t *d = event_data;
@@ -314,7 +333,10 @@ static void ws_event(void *arg, esp_event_base_t base, int32_t event_id, void *e
     switch (event_id) {
     case WEBSOCKET_EVENT_CONNECTED:
         ESP_LOGI(TAG, "connected, sending setup");
-        send_setup(d->client);
+        if (!send_setup(d->client)) {
+            ESP_LOGE(TAG, "setup 메시지를 만들지 못했습니다 (메모리 부족)");
+            fail_once("setup");
+        }
         break;
 
     case WEBSOCKET_EVENT_DATA:
@@ -409,6 +431,7 @@ esp_err_t gemini_start(const char *caller_number)
         .cert_pem = google_roots_pem,
         .disable_auto_reconnect = true,
         .network_timeout_ms = 10000,
+        .keep_alive_enable = true,  /* 죽은 연결을 TCP keepalive 로 약 20초 안에 끊는다 (기본 5s/5s/3회) */
     };
     esp_websocket_client_handle_t ws = esp_websocket_client_init(&cfg);
     if (ws == NULL) {

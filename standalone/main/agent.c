@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -18,6 +19,7 @@
 #define HEAP_LOG_MS         5000
 #define RING_PERIOD_MS      3000    /* 설정의 "벨 N번" = N × 3초 (폰마다 RING 신호가 달라 시간으로 센다) */
 #define TICK_MS             200
+#define AUDIO_WAIT_MS       2000    /* AI 가 받았는데 폰이 음성 채널을 이만큼 안 열면 직접 연다 */
 
 typedef enum {
     MSG_PHONE,
@@ -43,6 +45,8 @@ static TickType_t s_incoming_since;
 static bool s_answer_tried;
 static int s_rings;              /* 폰이 보낸 RING 신호 수 (진단용) */
 static bool s_answered;          /* AI 가 받은 전화다 */
+static TickType_t s_answered_at;
+static bool s_audio_requested;   /* 받은 뒤 음성 채널을 직접 열어 달라고 했다 (한 번만) */
 static bool s_call_active;       /* 통화가 연결돼 있다 */
 static bool s_audio_on;          /* 통화 음성 채널이 열려 있다 (벨소리를 위해 받기 전에 열리기도 한다) */
 static int s_audio_rate;
@@ -112,6 +116,7 @@ static void reset_call(void)
     s_answer_tried = false;
     s_rings = 0;
     s_answered = false;
+    s_audio_requested = false;
     s_number[0] = '\0';
 }
 
@@ -148,9 +153,22 @@ static void try_answer(void)
         return;
     }
     s_answered = true;
+    s_answered_at = xTaskGetTickCount();
     s_incoming = false;
     ESP_LOGI(TAG, "AI 가 전화를 받습니다");
     start_ai_audio();  /* 벨소리 때문에 음성 채널이 이미 열려 있으면 바로 시작 */
+}
+
+/* 받은 뒤 폰이 소리를 본체에 둔 채 음성 채널을 안 여는 경우가 있다 → 한 번 직접 연다.
+ * (통화 중에 사람이 폰에서 소리를 본체로 돌린 것은 인계로 보고 다시 가져오지 않는다) */
+static void check_ai_audio(void)
+{
+    if (s_answered && s_call_active && !s_audio_on && !s_audio_requested &&
+        xTaskGetTickCount() - s_answered_at >= pdMS_TO_TICKS(AUDIO_WAIT_MS)) {
+        s_audio_requested = true;
+        ESP_LOGW(TAG, "폰이 음성 채널을 열지 않아 직접 엽니다");
+        phone_audio_connect();
+    }
 }
 
 /* 벨이 설정한 시간만큼 울리면 AI 가 받는다 (한 통화에 한 번만 시도). */
@@ -273,8 +291,10 @@ static void log_call_stats(void)
     TickType_t now = xTaskGetTickCount();
     uint32_t ms = (uint32_t)((now - last_tick) * portTICK_PERIOD_MS);
     uint32_t rx = st.rx_bytes >= last_rx ? st.rx_bytes - last_rx : st.rx_bytes;
-    ESP_LOGI(TAG, "call stats: heap free=%u min=%u | gemini rx=%uKB/s buffered=%ums underruns=%u send_fails=%u",
+    /* big = 가장 큰 연속 빈 블록 (TLS 가 서버 레코드 하나(최대 16KB)를 통째로 받을 자리) */
+    ESP_LOGI(TAG, "call stats: heap free=%u min=%u big=%u | gemini rx=%uKB/s buffered=%ums underruns=%u send_fails=%u",
              (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
              (unsigned)(ms ? rx / ms : 0), (unsigned)st.ai_buffered_ms, (unsigned)st.underruns,
              (unsigned)st.send_fails);
     last_rx = st.rx_bytes;
@@ -288,6 +308,7 @@ static void agent_task(void *arg)
     for (;;) {
         bool got = xQueueReceive(s_queue, &m, pdMS_TO_TICKS(TICK_MS)) == pdTRUE;
         check_auto_answer();
+        check_ai_audio();
         if (s_ai_call && xTaskGetTickCount() - last_heap_log >= pdMS_TO_TICKS(HEAP_LOG_MS)) {
             last_heap_log = xTaskGetTickCount();
             log_call_stats();

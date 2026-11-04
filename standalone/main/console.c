@@ -185,7 +185,8 @@ static void console_task(void *arg)
 void console_start(const settings_t *running)
 {
     s_running = running;
-    ESP_ERROR_CHECK(uart_driver_install(CONSOLE_UART, 2048, 0, 0, NULL, 0));
+    /* 송신 버퍼가 없으면 로그 한 줄마다 찍는 태스크가 115200bps 로 다 나갈 때까지 멈춘다 (400바이트 ≈ 35ms) */
+    ESP_ERROR_CHECK(uart_driver_install(CONSOLE_UART, 2048, 2048, 0, NULL, 0));
     uart_vfs_dev_use_driver(CONSOLE_UART);
     xTaskCreate(console_task, "console", 4096, NULL, 3, NULL);
 }

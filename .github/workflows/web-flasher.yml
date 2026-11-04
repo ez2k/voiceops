@@ -41,18 +41,15 @@ jobs:
           . "$IDF_PATH/export.sh"
           cd standalone
           idf.py build
-          idf.py merge-bin
           python3 -c 'import json,sys; v=json.load(open("build/project_description.json"))["project_version"]; sys.exit(0 if v==sys.argv[1] else f"firmware version {v!r} != {sys.argv[1]!r}")' "$CALLBRIDGE_BUILD"
 
+      # 부트로더·파티션 표·앱을 따로 굽는다 → 지우기를 고르지 않으면 NVS(설정·페어링)가 남는다
       - name: Assemble site
         shell: bash
         run: |
-          mkdir -p site
-          sed -e "s/__BUILD__/${CALLBRIDGE_BUILD}/g" -e "s/__BUILT__/${CALLBRIDGE_BUILT}/g" web/index.html > site/index.html
-          sed -e "s/__BUILD__/${CALLBRIDGE_BUILD}/g" web/manifest.json > site/manifest.json
-          if grep -n "__BUILD__\|__BUILT__" site/index.html site/manifest.json; then exit 1; fi
-          cp standalone/build/merged-binary.bin site/callbridge-standalone.bin
           echo "build ${CALLBRIDGE_BUILD} (${CALLBRIDGE_BUILT})"
+          python3 web/make_site.py standalone/build site "$CALLBRIDGE_BUILD" "$CALLBRIDGE_BUILT"
+          cat site/manifest.json
           ls -la site
 
       - uses: actions/upload-pages-artifact@v3

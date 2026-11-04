@@ -31,8 +31,8 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     settings_load(&s_settings);
-    console_start(&s_settings);
     agent_start(&s_settings);
+    console_start(&s_settings);  /* pair·status 명령이 블루투스를 쓰므로 그 뒤에 */
 
     if (s_settings.wifi_ssid[0]) {
         wifi_start(s_settings.wifi_ssid, s_settings.wifi_pass);
