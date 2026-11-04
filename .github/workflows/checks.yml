@@ -1,0 +1,44 @@
+# PC 연결형 펌웨어 빌드 + PC 쪽 테스트 (웹 배포 없음)
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  usb-bridge-firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build usb-bridge
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          cd usb-bridge
+          idf.py build
+
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Standalone C modules
+        run: sh standalone/host_test/run.sh
+      - name: PC bridge
+        run: |
+          pip install pyserial numpy soxr google-genai pytest
+          cd bridge && python -m pytest -q
+      - name: Web settings page
+        run: |
+          cd web/test && npm install --no-audit --no-fund && npm test
