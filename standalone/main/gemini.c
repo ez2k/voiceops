@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include "cJSON.h"
-#include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "esp_websocket_client.h"
 #include "freertos/FreeRTOS.h"
@@ -32,6 +31,9 @@
 #define REST_BUF_BYTES     6144    /* 음성을 뺀 서버 메시지 JSON */
 #define TRANSCRIPT_MAX     400
 #define WS_SEND_TIMEOUT    pdMS_TO_TICKS(2000)
+
+/* Google Trust Services 루트 (google_roots.pem, 펌웨어에 내장) */
+extern const char google_roots_pem[] asm("_binary_google_roots_pem_start");
 
 static gemini_callbacks_t s_cb;
 static gemini_config_t s_cfg;
@@ -380,7 +382,7 @@ esp_err_t gemini_start(const char *caller_number)
         .buffer_size = 2048,
         .task_stack = 6144,
         .task_prio = 5,
-        .crt_bundle_attach = esp_crt_bundle_attach,
+        .cert_pem = google_roots_pem,
         .disable_auto_reconnect = true,
         .network_timeout_ms = 10000,
     };
