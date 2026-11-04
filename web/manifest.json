@@ -1,6 +1,6 @@
 {
   "name": "AI CallBridge",
-  "version": "0.1.0",
+  "version": "__BUILD__",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
   "builds": [

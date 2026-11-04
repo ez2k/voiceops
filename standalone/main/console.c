@@ -7,6 +7,7 @@
 
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
+#include "esp_app_desc.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -50,6 +51,7 @@ static void show(void)
     reply("value model=%s", s->model);
     reply("value rings=%d", s->rings);
     reply("value prompt=%s %u", s->prompt_custom ? "custom" : "default", (unsigned)strlen(s->prompt));
+    reply("value version=%s", esp_app_get_description()->version);
     reply("end show");
 }
 

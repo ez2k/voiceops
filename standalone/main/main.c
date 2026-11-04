@@ -7,6 +7,7 @@
  */
 #include <stdio.h>
 
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
@@ -16,8 +17,7 @@
 #include "settings.h"
 #include "wifi.h"
 
-#define TAG                 "main"
-#define CALLBRIDGE_VERSION  "0.1.0"
+#define TAG "main"
 
 static settings_t s_settings;
 
@@ -45,6 +45,6 @@ void app_main(void)
 
     ESP_LOGI(TAG, "heap after start: free=%u min=%u",
              (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
-    printf("CALLBRIDGE READY %s\n", CALLBRIDGE_VERSION);
+    printf("CALLBRIDGE READY %s\n", esp_app_get_description()->version);
     fflush(stdout);
 }

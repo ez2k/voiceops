@@ -28,6 +28,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 빌드 번호 = b<워크플로 실행 번호>-<커밋 앞 7자리>. 펌웨어(PROJECT_VER)와 웹 페이지에 같은 값이 들어간다.
+      - name: Build number
+        shell: bash
+        run: |
+          echo "CALLBRIDGE_BUILD=b${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "CALLBRIDGE_BUILT=$(date -u -d '+9 hours' '+%Y-%m-%d %H:%M') KST" >> "$GITHUB_ENV"
+
       - name: Build firmware
         shell: bash
         run: |
@@ -35,13 +42,17 @@ jobs:
           cd standalone
           idf.py build
           idf.py merge-bin
+          python3 -c 'import json,sys; v=json.load(open("build/project_description.json"))["project_version"]; sys.exit(0 if v==sys.argv[1] else f"firmware version {v!r} != {sys.argv[1]!r}")' "$CALLBRIDGE_BUILD"
 
       - name: Assemble site
         shell: bash
         run: |
           mkdir -p site
-          cp web/index.html web/manifest.json site/
+          sed -e "s/__BUILD__/${CALLBRIDGE_BUILD}/g" -e "s/__BUILT__/${CALLBRIDGE_BUILT}/g" web/index.html > site/index.html
+          sed -e "s/__BUILD__/${CALLBRIDGE_BUILD}/g" web/manifest.json > site/manifest.json
+          if grep -n "__BUILD__\|__BUILT__" site/index.html site/manifest.json; then exit 1; fi
           cp standalone/build/merged-binary.bin site/callbridge-standalone.bin
+          echo "build ${CALLBRIDGE_BUILD} (${CALLBRIDGE_BUILT})"
           ls -la site
 
       - uses: actions/upload-pages-artifact@v3
