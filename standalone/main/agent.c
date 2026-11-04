@@ -241,10 +241,10 @@ static void stop_speed_test(const char *why)
     gemini_stop();
     if (call_like) {
         phone_audio_disconnect();
-        ESP_LOGI(TAG, "통화 흉내 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s, 끊김 %u번, 버퍼 %ums — "
-                 "약 64KB/s 를 유지하고 끊김이 0 이어야 합니다",
-                 why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024),
-                 (unsigned)st.underruns, (unsigned)st.prebuffer_ms);
+        ESP_LOGI(TAG, "통화 흉내 시험 끝 (%s, 무선 우선 %s): 모두 %uKB, 1초 최고 %uKB/s, 끊김 %u번, 버퍼 %ums, "
+                 "보내기 실패 %u번 — 끊김 0 이어야 합니다",
+                 why, s_settings->coex, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024),
+                 (unsigned)st.underruns, (unsigned)st.prebuffer_ms, (unsigned)st.send_fails);
     } else {
         ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
                  why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));

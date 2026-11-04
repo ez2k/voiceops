@@ -35,10 +35,16 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 # PSRAM 이 없으니 TLS 버퍼는 필요할 때만 잡는다
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 
-# Wi-Fi 수신: 블루투스 통화와 무선을 나눠 쓰니, Wi-Fi 차례가 왔을 때 한 번에 많이 받도록
-# 묶음 수신(AMPDU) 창을 늘린다 (기본 6). 창은 정적 버퍼의 2배까지 → 정적 버퍼는 IDF 기본값 10.
-CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
-CONFIG_ESP_WIFI_RX_BA_WIN=12
+# PSRAM 이 없으니 Wi-Fi 정적 수신 버퍼를 줄인다. 묶음 수신(AMPDU) 창은 기본값 6 그대로 —
+# 창을 12 로 늘리거나 TCP 수신 창을 3배로 늘린 빌드는 통화 중 전송이 아예 멈췄다
+# (블루투스 통화가 무선을 끊어 쓰는 사이에 큰 묶음이 통째로 깨지는 것으로 보인다).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+
+# 통화 중에는 블루투스 때문에 Wi-Fi 패킷이 자주 사라진다 → TCP 가 빨리, 필요한 것만 다시 보내게
+# - SACK: 서버가 빠진 조각만 다시 보낸다 (AI 음성 쪽)
+# - 타이머 250 → 100ms: 우리가 보낸 조각을 더 빨리 다시 보낸다 (상대 음성 쪽, IDF 도움말: 나쁜 망에서 권장)
+CONFIG_LWIP_TCP_SACK_OUT=y
+CONFIG_LWIP_TCP_TMR_INTERVAL=100
 
 # TLS 핸드셰이크(통화 중 약 4초)와 음성 처리를 빠르게
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y

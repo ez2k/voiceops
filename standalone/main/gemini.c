@@ -33,7 +33,7 @@
 #define PREBUFFER_MAX      12800   /* 최대 0.8초 (대기열 1초 안에서) */
 #define REST_BUF_BYTES     6144    /* 음성을 뺀 서버 메시지 JSON */
 #define TRANSCRIPT_MAX     400
-#define WS_SEND_TIMEOUT    pdMS_TO_TICKS(2000)
+#define WS_SEND_TIMEOUT    pdMS_TO_TICKS(5000)  /* 통화 중 패킷을 잃으면 TCP 재전송에 1~2초가 걸린다 — 그 사이 끊지 않게 */
 
 /* Google Trust Services 루트 (google_roots.pem, 펌웨어에 내장) */
 extern const char google_roots_pem[] asm("_binary_google_roots_pem_start");
