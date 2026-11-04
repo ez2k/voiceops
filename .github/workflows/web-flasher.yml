@@ -1,0 +1,59 @@
+# 단독형 펌웨어를 빌드하고, 웹 설치·설정 페이지와 함께 GitHub Pages 로 배포한다.
+# 저장소 Settings → Pages → Source 를 "GitHub Actions" 로 한 번 설정해 두면 된다.
+name: web-flasher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "standalone/**"
+      - "components/**"
+      - "web/**"
+      - ".github/workflows/web-flasher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          cd standalone
+          idf.py build
+          idf.py merge-bin
+
+      - name: Assemble site
+        shell: bash
+        run: |
+          mkdir -p site
+          cp web/index.html web/manifest.json site/
+          cp standalone/build/merged-binary.bin site/callbridge-standalone.bin
+          ls -la site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

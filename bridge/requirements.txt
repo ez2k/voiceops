@@ -1,0 +1,5 @@
+pyserial>=3.5
+sounddevice>=0.5
+numpy>=1.26
+soxr>=0.5
+google-genai>=2.34

@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI CallBridge 설치</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    --bg: #f6f6f3; --card: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
+    --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --err: #c62828; --log: #111; --log-text: #d6d6d0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1e1e1c; --text: #ecece6; --muted: #a0a098; --line: #33332f;
+            --accent: #4c8dff; --ok: #4ec27a; --err: #ff6b6b; --log: #0b0b0a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  h2 span { color: var(--accent); margin-right: 6px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+           border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input, textarea { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+                    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  textarea { min-height: 260px; font-size: 13px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  #status { margin-top: 12px; font-size: 14px; min-height: 1.6em; }
+  #status.ok { color: var(--ok); } #status.err { color: var(--err); }
+  pre { background: var(--log); color: var(--log-text); border-radius: 8px; padding: 12px; margin: 0;
+        height: 280px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
+  #unsupported { display: none; color: var(--err); }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI CallBridge</h1>
+  <p class="sub">ESP32-WROOM-32 단독형 — 브라우저에서 펌웨어를 굽고 설정합니다.</p>
+  <p id="unsupported">이 브라우저는 USB 시리얼(Web Serial)을 지원하지 않습니다. PC의 크롬이나 엣지로 열어 주세요.</p>
+
+  <section>
+    <h2><span>①</span>펌웨어 설치</h2>
+    <p>ESP32를 USB로 연결하고 버튼을 누른 뒤 목록에서 포트를 고르세요. 처음 설치할 때는 "지우기"를 선택하세요. 업데이트할 때 지우지 않으면 설정과 페어링이 유지됩니다.</p>
+    <esp-web-install-button id="install" manifest="manifest.json">
+      <button slot="activate" class="primary">ESP32에 설치</button>
+    </esp-web-install-button>
+    <p class="muted" style="margin-top:12px">아래 ② 설정에서 기기에 연결해 둔 상태라면, 설치 버튼을 누를 때 자동으로 연결을 끊습니다.</p>
+  </section>
+
+  <section>
+    <h2><span>②</span>설정</h2>
+    <div class="row">
+      <button id="connect" class="primary">기기 연결</button>
+      <button id="disconnect" disabled>연결 끊기</button>
+      <button id="pair" disabled>새 폰 페어링</button>
+      <button id="status-btn" disabled>상태 확인</button>
+    </div>
+
+    <div class="grid">
+      <div><label for="wifi_ssid">Wi-Fi 이름</label><input id="wifi_ssid" autocomplete="off"></div>
+      <div><label for="wifi_pass">Wi-Fi 비밀번호</label><input id="wifi_pass" type="password" autocomplete="new-password"></div>
+      <div><label for="api_key">Gemini API 키</label><input id="api_key" type="password" autocomplete="off"></div>
+      <div><label for="rings">벨이 몇 번 울리면 AI가 받을까요</label><input id="rings" type="number" min="1" max="10" value="2"></div>
+    </div>
+    <label for="model">Gemini Live 모델</label>
+    <input id="model" value="gemini-3.8-live">
+    <label for="prompt">AI 지시문 (회사 정보, 인사말, 업무 규칙) — 비우고 저장하면 기본 지시문으로 돌아갑니다</label>
+    <textarea id="prompt" spellcheck="false"></textarea>
+
+    <div class="row" style="margin-top:12px">
+      <button id="save" class="primary" disabled>저장하고 재시작</button>
+      <span class="muted">비밀번호·API 키 칸을 비워 두면 저장된 값을 그대로 씁니다.</span>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <section>
+    <h2><span>③</span>기기 로그</h2>
+    <p class="muted">통화 중 대화 내용, 접수 메모, 메모리 상태가 여기에 표시됩니다.</p>
+    <pre id="log"></pre>
+    <div class="row" style="margin-top:8px"><button id="clear">지우기</button></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const PROMPT_CHUNK = 300;         // base64 한 줄 길이 (펌웨어와 같게, 4의 배수)
+const PROMPT_MAX_BYTES = 8192;
+
+let port = null, reader = null, writer = null;
+let lineBuf = "", promptB64 = "", loadedPrompt = "";
+let waiters = [];
+
+if (!("serial" in navigator)) {
+  $("unsupported").style.display = "block";
+  $("connect").disabled = true;
+}
+
+function setStatus(text, kind = "") {
+  $("status").textContent = text;
+  $("status").className = kind;
+}
+
+function log(line) {
+  const el = $("log");
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+  el.textContent += line + "\n";
+  if (el.textContent.length > 200000) el.textContent = el.textContent.slice(-150000);
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+function toB64(text) {
+  let bin = "";
+  for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+function fromB64(b64) {
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function waitFor(match, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const w = { match, resolve };
+    waiters.push(w);
+    setTimeout(() => { waiters = waiters.filter((x) => x !== w); resolve(null); }, timeoutMs);
+  });
+}
+
+function onLine(raw) {
+  const line = raw.replace(/\x1b\[[0-9;]*m/g, "");
+  log(line);
+  for (const w of [...waiters]) {
+    if (w.match(line)) { waiters = waiters.filter((x) => x !== w); w.resolve(line); }
+  }
+
+  let m;
+  if ((m = line.match(/^cfg value (\w+)=(.*)$/))) {
+    const [, key, value] = m;
+    if (key === "wifi_ssid") $("wifi_ssid").value = value;
+    if (key === "model") $("model").value = value;
+    if (key === "rings") $("rings").value = value;
+    if (key === "wifi_pass") $("wifi_pass").placeholder = value ? "저장됨 — 바꿀 때만 입력" : "";
+    if (key === "api_key") $("api_key").placeholder = value ? `저장됨 (${value}) — 바꿀 때만 입력` : "";
+  } else if ((m = line.match(/^cfg prompt data (\S+)$/))) {
+    promptB64 += m[1];
+  } else if (line === "cfg prompt end") {
+    loadedPrompt = fromB64(promptB64);
+    $("prompt").value = loadedPrompt;
+    promptB64 = "";
+  } else if (line.startsWith("CALLBRIDGE READY")) {
+    setStatus("기기가 준비됐습니다.", "ok");
+  }
+}
+
+async function readLoop() {
+  const decoder = new TextDecoder();
+  reader = port.readable.getReader();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      lineBuf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = lineBuf.indexOf("\n")) >= 0) {
+        onLine(lineBuf.slice(0, i).replace(/\r$/, ""));
+        lineBuf = lineBuf.slice(i + 1);
+      }
+    }
+  } catch (e) {
+    log(`[읽기 중단] ${e.message}`);
+  } finally {
+    reader.releaseLock();
+    reader = null;
+  }
+}
+
+async function send(line) {
+  await writer.write(new TextEncoder().encode(line + "\n"));
+}
+
+async function command(line, okPrefix) {
+  const replied = waitFor((l) => l.startsWith(`cfg ok ${okPrefix}`) || l.startsWith(`cfg err ${okPrefix}`));
+  await send(line);
+  const reply = await replied;
+  if (!reply) throw new Error(`응답 없음: ${okPrefix}`);
+  if (reply.startsWith("cfg err")) throw new Error(reply.slice(8));
+}
+
+async function loadSettings() {
+  promptB64 = "";
+  const shown = waitFor((l) => l === "cfg end show");
+  await send("cfg show");
+  await shown;
+  const prompted = waitFor((l) => l === "cfg prompt end", 5000);
+  await send("cfg prompt get");
+  await prompted;
+}
+
+function setConnected(on) {
+  $("connect").disabled = on || !("serial" in navigator);
+  for (const id of ["disconnect", "pair", "status-btn", "save"]) $(id).disabled = !on;
+}
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  } catch (e) {
+    setStatus(`연결하지 못했습니다: ${e.message}`, "err");
+    port = null;
+    return;
+  }
+  writer = port.writable.getWriter();
+  readLoop();
+  setConnected(true);
+  setStatus("연결됨 — 설정을 불러오는 중…");
+  await new Promise((r) => setTimeout(r, 1500));  // 포트를 열 때 기기가 재시작될 수 있다
+  await loadSettings();
+  setStatus("연결됨", "ok");
+}
+
+async function disconnect() {
+  if (!port) return;
+  try {
+    if (reader) await reader.cancel();
+    if (writer) { writer.releaseLock(); writer = null; }
+    await port.close();
+  } catch (e) {
+    log(`[연결 끊기 오류] ${e.message}`);
+  }
+  port = null;
+  setConnected(false);
+  setStatus("연결 끊김");
+}
+
+async function save() {
+  const prompt = $("prompt").value;
+  if (new TextEncoder().encode(prompt).length > PROMPT_MAX_BYTES) {
+    setStatus(`지시문이 너무 깁니다 (최대 ${PROMPT_MAX_BYTES}바이트).`, "err");
+    return;
+  }
+  $("save").disabled = true;
+  try {
+    setStatus("저장 중…");
+    const fields = ["wifi_ssid", "wifi_pass", "api_key", "model", "rings"];
+    for (const key of fields) {
+      const value = key === "wifi_pass" ? $(key).value : $(key).value.trim();
+      if (value === "") continue;  // 빈 칸은 저장된 값을 그대로 둔다
+      if (/[\r\n]/.test(value)) throw new Error(`${key}에 줄바꿈이 있습니다`);
+      await command(`cfg set ${key} ${value}`, key);
+    }
+    if (prompt.trim() === "") {
+      await command("cfg prompt reset", "prompt");
+    } else if (prompt !== loadedPrompt) {
+      await command("cfg prompt begin", "prompt begin");
+      const b64 = toB64(prompt);
+      for (let i = 0; i < b64.length; i += PROMPT_CHUNK) {
+        await send(`cfg prompt data ${b64.slice(i, i + PROMPT_CHUNK)}`);
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      await command("cfg prompt end", "prompt");
+    }
+    const restarted = waitFor((l) => l.startsWith("CALLBRIDGE READY"), 15000);
+    await command("cfg reboot", "reboot");
+    setStatus("저장했습니다. 기기가 재시작합니다…", "ok");
+    $("wifi_pass").value = "";
+    $("api_key").value = "";
+    if (await restarted) await loadSettings();
+  } catch (e) {
+    setStatus(`저장하지 못했습니다: ${e.message}`, "err");
+  } finally {
+    $("save").disabled = !port;
+  }
+}
+
+$("connect").addEventListener("click", connect);
+$("disconnect").addEventListener("click", disconnect);
+$("save").addEventListener("click", save);
+$("pair").addEventListener("click", async () => {
+  await send("pair");
+  setStatus("페어링 모드 — 폰의 블루투스 설정에서 \"AI CallBridge\"를 선택하세요.", "ok");
+});
+$("status-btn").addEventListener("click", () => send("status"));
+$("clear").addEventListener("click", () => { $("log").textContent = ""; });
+// 설치 도구가 포트를 쓸 수 있도록 먼저 연결을 끊는다
+$("install").addEventListener("click", disconnect, { capture: true });
+</script>
+</body>
+</html>

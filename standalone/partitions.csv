@@ -1,0 +1,5 @@
+# 4MB 플래시: 블루투스 클래식 + Wi-Fi + TLS 가 함께 들어가 앱이 커서 3MB 를 준다
+# Name,    Type, SubType, Offset,  Size
+nvs,       data, nvs,     0x9000,  0x6000
+phy_init,  data, phy,     0xf000,  0x1000
+factory,   app,  factory, 0x10000, 0x300000
