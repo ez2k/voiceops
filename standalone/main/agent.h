@@ -5,10 +5,13 @@
  */
 #pragma once
 
+#include <stdbool.h>
+
 #include "settings.h"
 
 /* 블루투스(phone)와 Gemini 세션을 준비하고 agent 태스크를 시작한다. */
 void agent_start(const settings_t *settings);
 
-/* 전화 없이 Gemini 인사 음성을 받아 수신 속도를 잰다 (결과는 로그). 통화 중에는 무시한다. */
-void agent_speed_test(void);
+/* 전화 없이 AI 음성 수신 속도를 잰다 (결과는 로그). 통화 중에는 무시한다.
+ * call_like: 폰의 통화 음성 채널만 열고 실제 통화처럼 시험한다 (블루투스가 무선을 차지하는 상황 재현). */
+void agent_speed_test(bool call_like);

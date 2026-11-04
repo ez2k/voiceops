@@ -154,8 +154,8 @@ static void handle_line(char *line)
     } else if (strcmp(line, "pair") == 0) {
         phone_pair();
         reply("ok pair");
-    } else if (strcmp(line, "aitest") == 0) {
-        agent_speed_test();
+    } else if (strcmp(line, "aitest") == 0 || strcmp(line, "aitest call") == 0) {
+        agent_speed_test(strcmp(line, "aitest call") == 0);
         reply("ok aitest");
     } else if (strcmp(line, "status") == 0) {
         phone_status_t st;

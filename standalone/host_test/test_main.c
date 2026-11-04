@@ -182,6 +182,7 @@ static void dump_messages(void)
     b64[b64_encode(pcm, sizeof(pcm), b64)] = '\0';
     printf("%s%s%s\n", GEMINI_AUDIO_PREFIX, b64, GEMINI_AUDIO_SUFFIX);
     printf("%s\n", GEMINI_GREETING_JSON);
+    printf("%s\n", GEMINI_SPEED_TEST_JSON);
     printf("%s\n", GEMINI_TOOLS_JSON);
 }
 

@@ -13,10 +13,11 @@ cc -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -I "$MAIN" \
 "$OUT" dump | python3 -c '
 import json, sys
 lines = sys.stdin.read().splitlines()
-audio, greeting, tools = (json.loads(l) for l in lines)
+audio, greeting, speed_test, tools = (json.loads(l) for l in lines)
 assert audio["realtimeInput"]["audio"]["mimeType"] == "audio/pcm;rate=8000"
 assert audio["realtimeInput"]["audio"]["data"] == "AQIDBA=="
 assert greeting["clientContent"]["turnComplete"] is True
+assert speed_test["clientContent"]["turnComplete"] is True
 names = [f["name"] for f in tools[0]["functionDeclarations"]]
 assert names == ["end_call", "transfer_to_human", "save_note"], names
 print("message JSON ok:", names)

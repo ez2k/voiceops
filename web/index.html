@@ -72,6 +72,7 @@
       <button id="pair" disabled>새 폰 페어링</button>
       <button id="status-btn" disabled>상태 확인</button>
       <button id="speed-btn" disabled>AI 속도 시험</button>
+      <button id="call-test-btn" disabled>통화 흉내 시험</button>
     </div>
     <p id="device-build"></p>
 
@@ -254,7 +255,7 @@ async function loadSettings() {
 
 function setConnected(on) {
   $("connect").disabled = on || !("serial" in navigator);
-  for (const id of ["disconnect", "pair", "status-btn", "speed-btn", "save"]) $(id).disabled = !on;
+  for (const id of ["disconnect", "pair", "status-btn", "speed-btn", "call-test-btn", "save"]) $(id).disabled = !on;
 }
 
 async function connect() {
@@ -343,7 +344,12 @@ $("pair").addEventListener("click", async () => {
 $("status-btn").addEventListener("click", () => send("status"));
 $("speed-btn").addEventListener("click", async () => {
   await send("aitest");
-  setStatus("AI 속도 시험 중 (15초, 전화 없이) — 결과는 ③ 로그의 \"속도 시험 끝\" 줄에 나옵니다.", "ok");
+  setStatus("AI 속도 시험 중 (20초, 전화 없이) — 결과는 ③ 로그의 \"속도 시험 끝\" 줄에 나옵니다.", "ok");
+});
+// 전화 없이 폰의 통화 음성 채널만 열어 실제 통화처럼 시험한다 (블루투스가 무선을 차지하는 상황)
+$("call-test-btn").addEventListener("click", async () => {
+  await send("aitest call");
+  setStatus("통화 흉내 시험 중 (약 25초) — 결과는 ③ 로그의 \"통화 흉내 시험 끝\" 줄에 나옵니다.", "ok");
 });
 $("clear").addEventListener("click", () => { $("log").textContent = ""; });
 // 설치 도구가 포트를 쓸 수 있도록 먼저 연결을 끊는다

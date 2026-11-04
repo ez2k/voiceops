@@ -29,8 +29,13 @@ typedef struct {
 /* 버퍼와 송신 태스크를 준비한다. 부팅 때 한 번 (메모리를 일찍 잡아 두려고). */
 esp_err_t gemini_init(const gemini_callbacks_t *callbacks, const gemini_config_t *config);
 
-/* 세션을 연다 (연결 → 설정 → 첫 인사). 응답을 기다리지 않고 바로 돌아온다. */
-esp_err_t gemini_start(const char *caller_number);
+typedef enum {
+    GEMINI_OPEN_GREETING,     /* 전화 응대: AI 가 첫 인사를 한다 */
+    GEMINI_OPEN_SPEED_TEST,   /* 속도 시험: AI 가 30초쯤 길게 말한다 */
+} gemini_opening_t;
+
+/* 세션을 연다 (연결 → 설정 → 첫 신호). 응답을 기다리지 않고 바로 돌아온다. */
+esp_err_t gemini_start(const char *caller_number, gemini_opening_t opening);
 
 /* 통화 음성이 연결됐다. 이때부터 상대 음성을 Gemini 로 보낸다. rate 는 8000 만 지원. */
 void gemini_audio_start(int rate);

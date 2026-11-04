@@ -20,7 +20,8 @@
 #define RING_PERIOD_MS      3000    /* 설정의 "벨 N번" = N × 3초 (폰마다 RING 신호가 달라 시간으로 센다) */
 #define TICK_MS             200
 #define AUDIO_WAIT_MS       2000    /* AI 가 받았는데 폰이 음성 채널을 이만큼 안 열면 직접 연다 */
-#define SPEED_TEST_MS       15000   /* 속도 시험: 전화 없이 Gemini 인사 음성을 받는 시간 */
+#define SPEED_TEST_MS       20000   /* 속도 시험 시간 (AI 에게 30초쯤 길게 말하게 한다) */
+#define TEST_AUDIO_WAIT_MS  5000    /* 통화 흉내 시험: 폰이 음성 채널을 열어 주기를 기다리는 시간 */
 #define SPEED_WINDOW_TICKS  (1000 / TICK_MS)
 
 typedef enum {
@@ -56,7 +57,13 @@ static int s_audio_rate;
 static char s_number[32];
 
 /* 속도 시험 (agent 태스크만 만진다) */
-static bool s_speed_test;
+typedef enum {
+    TEST_OFF,
+    TEST_RADIO,       /* 전화 없이 받기만 (소리는 버림) */
+    TEST_CALL_WAIT,   /* 통화 흉내: 폰이 음성 채널을 열어 주기를 기다리는 중 */
+    TEST_CALL,        /* 통화 흉내: 음성 채널을 열고 실제 통화처럼 AI 음성을 폰으로 흘림 */
+} test_state_t;
+static test_state_t s_test;
 static TickType_t s_test_started;
 static uint32_t s_test_hist[SPEED_WINDOW_TICKS];  /* 1초 동안의 누적 수신량 → 1초 최고 속도 */
 static unsigned s_test_idx;
@@ -151,7 +158,7 @@ static void try_answer(void)
         ESP_LOGW(TAG, "Wi-Fi 가 연결되지 않아 AI 가 받지 않습니다 — 사람이 받아 주세요");
         return;
     }
-    esp_err_t err = gemini_start(s_number);
+    esp_err_t err = gemini_start(s_number, GEMINI_OPEN_GREETING);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
         return;
@@ -211,50 +218,104 @@ static void hand_over(void)
     gemini_stop();
 }
 
-/* ---- 속도 시험: 블루투스 통화 없이 Gemini 에서 AI 음성을 얼마나 빨리 받는지 잰다 ----
- * 통화 중 수신 속도(call stats 의 rx)와 비교하면, 끊김이 블루투스·Wi-Fi 공존 때문인지 가릴 수 있다. */
+/* ---- 속도 시험 ----
+ * radio: 블루투스 통화 없이 Gemini 에서 AI 음성을 얼마나 빨리 받는지 잰다 (소리는 버림).
+ * call : 전화 없이 폰의 통화 음성 채널(블루투스 SCO)만 열고, 실제 통화와 똑같이 AI 음성을 폰으로 흘린다.
+ *        블루투스 통화가 무선을 차지하는 상황을 전화 없이 재현한다 (폰이 통화 없이 채널을 열어 줘야 한다).
+ * 두 시험 모두 AI 에게 30초쯤 길게 말하게 해서 끊김이 잘 드러나게 한다. */
+
+static void begin_measure(void)
+{
+    s_test_started = xTaskGetTickCount();
+    memset(s_test_hist, 0, sizeof(s_test_hist));
+    s_test_idx = 0;
+    s_test_peak = 0;
+}
 
 static void stop_speed_test(const char *why)
 {
     gemini_stats_t st;
     gemini_get_stats(&st);
+    const bool call_like = s_test == TEST_CALL || s_test == TEST_CALL_WAIT;
+    s_ai_call = false;
     gemini_stop();
-    s_speed_test = false;
-    ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
-             why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));
+    if (call_like) {
+        phone_audio_disconnect();
+        ESP_LOGI(TAG, "통화 흉내 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s, 끊김 %u번, 버퍼 %ums — "
+                 "약 64KB/s 를 유지하고 끊김이 0 이어야 합니다",
+                 why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024),
+                 (unsigned)st.underruns, (unsigned)st.prebuffer_ms);
+    } else {
+        ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
+                 why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));
+    }
+    s_test = TEST_OFF;
 }
 
-static void start_speed_test(void)
+static void start_speed_test(bool call_like)
 {
-    if (s_speed_test || s_incoming || s_call_active || s_answered) {
-        ESP_LOGW(TAG, "통화 중이거나 이미 시험 중이라 속도 시험을 하지 않습니다");
+    if (s_test != TEST_OFF || s_incoming || s_call_active || s_answered) {
+        ESP_LOGW(TAG, "통화 중이거나 이미 시험 중이라 시험하지 않습니다");
         return;
     }
     if (s_settings->api_key[0] == '\0' || !wifi_connected()) {
-        ESP_LOGW(TAG, "속도 시험에는 Wi-Fi 연결과 API 키가 필요합니다");
+        ESP_LOGW(TAG, "시험에는 Wi-Fi 연결과 API 키가 필요합니다");
         return;
     }
-    esp_err_t err = gemini_start("");
+    if (call_like) {
+        esp_err_t err = phone_audio_connect();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "통화 흉내 시험: 폰과 연결돼 있지 않습니다 (%s)", esp_err_to_name(err));
+            return;
+        }
+        s_test = TEST_CALL_WAIT;
+        s_test_started = xTaskGetTickCount();
+        ESP_LOGI(TAG, "통화 흉내 시험: 폰에 통화 음성 채널을 열어 달라고 했습니다");
+        return;
+    }
+    esp_err_t err = gemini_start("", GEMINI_OPEN_SPEED_TEST);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "속도 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
         return;
     }
-    s_speed_test = true;
-    s_test_started = xTaskGetTickCount();
-    memset(s_test_hist, 0, sizeof(s_test_hist));
-    s_test_idx = 0;
-    s_test_peak = 0;
-    ESP_LOGI(TAG, "속도 시험 시작: 전화 없이 AI 인사 음성을 %d초 동안 받습니다", SPEED_TEST_MS / 1000);
+    s_test = TEST_RADIO;
+    begin_measure();
+    ESP_LOGI(TAG, "속도 시험 시작: 전화 없이 AI 음성을 %d초 동안 받습니다", SPEED_TEST_MS / 1000);
+}
+
+/* 통화 흉내 시험: 음성 채널이 열렸다 → 실제 통화와 같은 경로로 AI 를 붙인다 */
+static void on_test_audio_on(int rate)
+{
+    esp_err_t err = gemini_start("", GEMINI_OPEN_SPEED_TEST);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "통화 흉내 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
+        stop_speed_test("AI 세션 실패");
+        return;
+    }
+    gemini_audio_start(rate);
+    s_ai_call = true;
+    s_test = TEST_CALL;
+    begin_measure();
+    ESP_LOGI(TAG, "통화 흉내 시험 시작: 음성 채널이 열렸습니다 — %d초 동안 실제 통화처럼 AI 음성을 흘립니다",
+             SPEED_TEST_MS / 1000);
 }
 
 static void run_speed_test(void)
 {
-    if (!s_speed_test) {
+    if (s_test == TEST_OFF) {
         return;
     }
-    static uint8_t sink[1024];
-    while (gemini_pull_ai_audio(sink, sizeof(sink)) > 0) {
-        /* 소리는 버린다 — 받는 속도만 잰다 */
+    if (s_test == TEST_CALL_WAIT) {
+        if (xTaskGetTickCount() - s_test_started >= pdMS_TO_TICKS(TEST_AUDIO_WAIT_MS)) {
+            stop_speed_test("폰이 통화 없이 음성 채널을 열어 주지 않음");
+        }
+        return;
+    }
+    if (s_test == TEST_RADIO) {
+        static uint8_t sink[1024];
+        while (gemini_pull_ai_audio(sink, sizeof(sink)) > 0) {
+            /* 소리는 버린다 — 받는 속도만 잰다 (통화 흉내 시험은 블루투스가 실시간으로 꺼내 간다) */
+        }
     }
     gemini_stats_t st;
     gemini_get_stats(&st);
@@ -269,9 +330,9 @@ static void run_speed_test(void)
     }
 }
 
-void agent_speed_test(void)
+void agent_speed_test(bool call_like)
 {
-    const agent_msg_t m = {.kind = MSG_SPEED_TEST};
+    const agent_msg_t m = {.kind = MSG_SPEED_TEST, .value = call_like};
     post(&m);
 }
 
@@ -298,7 +359,7 @@ static void handle_phone(const agent_msg_t *m)
     case PHONE_EVT_CALLSETUP:
         ESP_LOGI(TAG, "callsetup=%d", m->value);
         if (m->value == 1) {
-            if (s_speed_test) {
+            if (s_test != TEST_OFF) {
                 stop_speed_test("전화가 와서 중단");
             }
             reset_call();
@@ -336,7 +397,9 @@ static void handle_phone(const agent_msg_t *m)
     case PHONE_EVT_AUDIO_ON:
         s_audio_on = true;
         s_audio_rate = m->value;
-        if (s_answered) {
+        if (s_test == TEST_CALL_WAIT) {
+            on_test_audio_on(m->value);
+        } else if (s_answered) {
             start_ai_audio();
         } else if (s_call_active) {
             ESP_LOGI(TAG, "사람이 받은 통화 — 소리를 폰 본체로 돌립니다");
@@ -349,6 +412,9 @@ static void handle_phone(const agent_msg_t *m)
         /* 세션은 통화가 끝날 때 닫는다. 받는 순간 폰이 음성 채널을 다시 여는 경우가 있다. */
         s_audio_on = false;
         s_ai_call = false;
+        if (s_test == TEST_CALL) {
+            stop_speed_test("폰이 음성 채널을 닫음");
+        }
         break;
     case PHONE_EVT_AUDIO_UNSUPPORTED:
         ESP_LOGE(TAG, "지원하지 않는 통화 코덱: %s", m->text);
@@ -409,10 +475,10 @@ static void agent_task(void *arg)
             hand_over();
             break;
         case MSG_SPEED_TEST:
-            start_speed_test();
+            start_speed_test(m.value != 0);
             break;
         case MSG_AI_FAILED:
-            if (s_speed_test) {
+            if (s_test != TEST_OFF) {
                 stop_speed_test(m.text);
             } else if (s_answered || s_ai_call) {
                 ESP_LOGE(TAG, "AI 연결 문제 (%s) — 사람에게 인계합니다", m.text);

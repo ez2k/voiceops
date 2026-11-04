@@ -48,6 +48,7 @@ static volatile bool s_audio_on;   /* 통화 음성이 연결됐다 */
 static volatile bool s_stopping;
 static bool s_failed;
 static char s_caller[32];
+static gemini_opening_t s_opening;
 
 static StreamBufferHandle_t s_caller_audio;
 static pcm_ring_t s_ai_audio;
@@ -291,7 +292,8 @@ static void handle_message(esp_websocket_client_handle_t client, const char *jso
     if (cJSON_GetObjectItemCaseSensitive(root, "setupComplete") != NULL) {
         ESP_LOGI(TAG, "session ready");
         s_ready = true;
-        send_on(client, GEMINI_GREETING_JSON, strlen(GEMINI_GREETING_JSON));
+        const char *first = s_opening == GEMINI_OPEN_SPEED_TEST ? GEMINI_SPEED_TEST_JSON : GEMINI_GREETING_JSON;
+        send_on(client, first, strlen(first));
     }
 
     const cJSON *sc = cJSON_GetObjectItemCaseSensitive(root, "serverContent");
@@ -406,10 +408,11 @@ esp_err_t gemini_init(const gemini_callbacks_t *callbacks, const gemini_config_t
     return ESP_OK;
 }
 
-esp_err_t gemini_start(const char *caller_number)
+esp_err_t gemini_start(const char *caller_number, gemini_opening_t opening)
 {
     gemini_stop();
 
+    s_opening = opening;
     strlcpy(s_caller, caller_number ? caller_number : "", sizeof(s_caller));
     s_stopping = false;
     s_failed = false;

@@ -50,7 +50,7 @@ function deviceHandle(line) {
     setTimeout(() => out("I (321) main: heap after start: free=1234\r\nCALLBRIDGE READY ${device.version}"), 50);
   } else if (line === "pair") {
     out("cfg ok pair");
-  } else if (line === "aitest") {
+  } else if (line === "aitest" || line === "aitest call") {
     out("cfg ok aitest");
   }
 }
@@ -139,6 +139,9 @@ const assert = (cond, msg) => { if (!cond) { console.error("FAIL:", msg); proces
   $("speed-btn").click();
   await sleep(100);
   assert(device.lines.includes("aitest") && $("status").textContent.includes("속도 시험"), "AI 속도 시험 명령");
+  $("call-test-btn").click();
+  await sleep(100);
+  assert(device.lines.includes("aitest call") && $("status").textContent.includes("통화 흉내"), "통화 흉내 시험 명령");
 
   // 연결 끊기 → 빌드 번호를 모르는 이전 펌웨어에 다시 연결
   $("disconnect").click();

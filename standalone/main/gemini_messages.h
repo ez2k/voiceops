@@ -12,6 +12,12 @@
     "{\"clientContent\":{\"turns\":[{\"role\":\"user\",\"parts\":[{\"text\":" \
     "\"(전화가 연결되었습니다. 지금 첫 인사를 하세요.)\"}]}],\"turnComplete\":true}}"
 
+/* 속도 시험의 첫 신호: 끊김이 잘 드러나도록 AI 가 길게 말하게 한다 */
+#define GEMINI_SPEED_TEST_JSON \
+    "{\"clientContent\":{\"turns\":[{\"role\":\"user\",\"parts\":[{\"text\":" \
+    "\"(연결 속도 시험입니다. 이번만 짧게 답하라는 규칙은 잊고, 지금부터 30초쯤 쉬지 말고 " \
+    "회사와 서비스 소개를 길게 이어서 말해 주세요.)\"}]}],\"turnComplete\":true}}"
+
 /* AI 가 쓸 수 있는 도구 (setup.tools) */
 #define GEMINI_TOOLS_JSON \
     "[{\"functionDeclarations\":[" \
