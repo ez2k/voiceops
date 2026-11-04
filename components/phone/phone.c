@@ -241,6 +241,10 @@ static void hf_cb(esp_hf_client_cb_event_t event, esp_hf_client_cb_param_t *para
     case ESP_HF_CLIENT_AT_RESPONSE_EVT:
         emit(PHONE_EVT_AT, (int)param->at_response.code, (int)param->at_response.cme, NULL, NULL);
         break;
+    case ESP_HF_CLIENT_BSIR_EVT:
+        /* 폰이 벨소리를 음성 채널로 보내는지 (그러면 받기 전에 AUDIO_ON 이 먼저 온다) */
+        ESP_LOGI(TAG, "in-band ring tone: %s", param->bsir.state ? "yes" : "no");
+        break;
     default:
         break;
     }

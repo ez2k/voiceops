@@ -37,7 +37,7 @@ def test_end_to_end_over_pty(tmp_path):
         os.write(master, b"boot noise" + frame.encode(frame.EVT, b"callsetup 1") + frame.encode(frame.EVT, b"ring"))
         assert read_frames(master, device, 1) == [(frame.CMD, b"answer")]
 
-        os.write(master, frame.encode(frame.EVT, b"audio on cvsd 8000 120"))
+        os.write(master, frame.encode(frame.EVT, b"call 1") + frame.encode(frame.EVT, b"audio on cvsd 8000 120"))
         time.sleep(0.1)
         for _ in range(5):
             os.write(master, frame.encode(frame.AUDIO, bytes(120)))

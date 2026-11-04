@@ -43,6 +43,8 @@ class Bridge:
         self._number: str | None = None
         self._rings = 0
         self._answer_sent = False
+        self._call_active = False
+        self._audio_rate: int | None = None  # 음성 채널이 열려 있으면 샘플레이트
         self._session: CallSession | None = None
 
     # ---- ESP32 -> PC (링크 수신 스레드에서 순서대로 불린다) ----
@@ -73,16 +75,29 @@ class Bridge:
                 self._out("[자동응답] 전화를 받습니다")
                 self._link.send_command("answer")
         elif kind == "audio":
+            # 폰이 벨소리를 들려주려고 받기 전에 음성 채널을 여는 경우가 있다 (인밴드 벨소리).
+            # 그래서 통화가 실제로 연결된 뒤에만 세션을 시작한다.
             args = rest.split()
             if args[:1] == ["on"]:
-                self._start_session(rate=int(args[2]))
+                self._audio_rate = int(args[2])
+                self._update_session()
             elif args[:1] == ["off"]:
-                self._stop_session()
-        elif kind == "call" and rest == "0":
-            self._number = None
+                self._audio_rate = None
+                self._update_session()
+        elif kind == "call":
+            self._call_active = rest == "1"
+            if not self._call_active:
+                self._number = None
+            self._update_session()
+
+    def _update_session(self) -> None:
+        if self._call_active and self._audio_rate is not None:
+            if self._session is None:
+                self._start_session(self._audio_rate)
+        else:
+            self._stop_session()
 
     def _start_session(self, rate: int) -> None:
-        self._stop_session()
         number = re.sub(r"[^0-9+]", "", self._number or "") or None
         call = CallInfo(number, self._record_dir / f"{datetime.now():%Y%m%d-%H%M%S}_{number or 'unknown'}")
         recorder = WavRecorder(call.record_base.with_suffix(".wav"), rate)

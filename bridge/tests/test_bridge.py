@@ -73,6 +73,7 @@ def test_no_auto_answer_by_default(tmp_path):
 def test_call_audio_roundtrip_and_recording(tmp_path):
     bridge, link = make_bridge(tmp_path)
     bridge.handle_frame(*evt("clip 010-1234-5678"))
+    bridge.handle_frame(*evt("call 1"))
     bridge.handle_frame(*evt("audio on cvsd 8000 120"))
     ep = FakeEndpoint.instances[-1]
     assert ep.rate == 8000
@@ -110,9 +111,26 @@ def test_dial_names_recording(tmp_path):
     bridge, link = make_bridge(tmp_path)
     bridge.command("dial 0212345678")
     bridge.handle_frame(*evt("audio on cvsd 8000 120"))
+    bridge.handle_frame(*evt("call 1"))
     bridge.close()
     assert link.commands == ["dial 0212345678"]
     assert list(tmp_path.glob("*_0212345678.wav"))
+
+
+def test_inband_ringtone_does_not_start_session_before_answer(tmp_path):
+    bridge, link = make_bridge(tmp_path, auto_answer=1)
+    bridge.handle_frame(*evt("callsetup 1"))
+    bridge.handle_frame(*evt("audio on cvsd 8000 120"))  # 벨소리용 음성 채널
+    bridge.handle_frame(frame.AUDIO, bytes(120))
+    assert FakeEndpoint.instances == [] and link.audio == []
+    bridge.handle_frame(*evt("ring"))
+    assert link.commands == ["answer"]
+    bridge.handle_frame(*evt("call 1"))                   # 받아서 연결됨 → 이미 열린 채널로 세션 시작
+    assert len(FakeEndpoint.instances) == 1
+    bridge.handle_frame(frame.AUDIO, bytes(120))
+    assert len(link.audio) == 1
+    bridge.handle_frame(*evt("call 0"))
+    assert FakeEndpoint.instances[0].stopped
 
 
 def test_call_control_sends_device_commands(tmp_path):
