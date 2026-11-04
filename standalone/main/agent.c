@@ -211,6 +211,70 @@ static void hand_over(void)
     gemini_stop();
 }
 
+/* ---- 속도 시험: 블루투스 통화 없이 Gemini 에서 AI 음성을 얼마나 빨리 받는지 잰다 ----
+ * 통화 중 수신 속도(call stats 의 rx)와 비교하면, 끊김이 블루투스·Wi-Fi 공존 때문인지 가릴 수 있다. */
+
+static void stop_speed_test(const char *why)
+{
+    gemini_stats_t st;
+    gemini_get_stats(&st);
+    gemini_stop();
+    s_speed_test = false;
+    ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
+             why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));
+}
+
+static void start_speed_test(void)
+{
+    if (s_speed_test || s_incoming || s_call_active || s_answered) {
+        ESP_LOGW(TAG, "통화 중이거나 이미 시험 중이라 속도 시험을 하지 않습니다");
+        return;
+    }
+    if (s_settings->api_key[0] == '\0' || !wifi_connected()) {
+        ESP_LOGW(TAG, "속도 시험에는 Wi-Fi 연결과 API 키가 필요합니다");
+        return;
+    }
+    esp_err_t err = gemini_start("");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "속도 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
+        return;
+    }
+    s_speed_test = true;
+    s_test_started = xTaskGetTickCount();
+    memset(s_test_hist, 0, sizeof(s_test_hist));
+    s_test_idx = 0;
+    s_test_peak = 0;
+    ESP_LOGI(TAG, "속도 시험 시작: 전화 없이 AI 인사 음성을 %d초 동안 받습니다", SPEED_TEST_MS / 1000);
+}
+
+static void run_speed_test(void)
+{
+    if (!s_speed_test) {
+        return;
+    }
+    static uint8_t sink[1024];
+    while (gemini_pull_ai_audio(sink, sizeof(sink)) > 0) {
+        /* 소리는 버린다 — 받는 속도만 잰다 */
+    }
+    gemini_stats_t st;
+    gemini_get_stats(&st);
+    uint32_t window = st.rx_bytes - s_test_hist[s_test_idx];  /* 지금 - 1초 전 */
+    if (window > s_test_peak) {
+        s_test_peak = window;
+    }
+    s_test_hist[s_test_idx] = st.rx_bytes;
+    s_test_idx = (s_test_idx + 1) % SPEED_WINDOW_TICKS;
+    if (xTaskGetTickCount() - s_test_started >= pdMS_TO_TICKS(SPEED_TEST_MS)) {
+        stop_speed_test("시간 다 됨");
+    }
+}
+
+void agent_speed_test(void)
+{
+    const agent_msg_t m = {.kind = MSG_SPEED_TEST};
+    post(&m);
+}
+
 static void handle_phone(const agent_msg_t *m)
 {
     switch (m->evt) {
@@ -292,70 +356,6 @@ static void handle_phone(const agent_msg_t *m)
     default:
         break;
     }
-}
-
-/* ---- 속도 시험: 블루투스 통화 없이 Gemini 에서 AI 음성을 얼마나 빨리 받는지 잰다 ----
- * 통화 중 수신 속도(call stats 의 rx)와 비교하면, 끊김이 블루투스·Wi-Fi 공존 때문인지 가릴 수 있다. */
-
-static void stop_speed_test(const char *why)
-{
-    gemini_stats_t st;
-    gemini_get_stats(&st);
-    gemini_stop();
-    s_speed_test = false;
-    ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
-             why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));
-}
-
-static void start_speed_test(void)
-{
-    if (s_speed_test || s_incoming || s_call_active || s_answered) {
-        ESP_LOGW(TAG, "통화 중이거나 이미 시험 중이라 속도 시험을 하지 않습니다");
-        return;
-    }
-    if (s_settings->api_key[0] == '\0' || !wifi_connected()) {
-        ESP_LOGW(TAG, "속도 시험에는 Wi-Fi 연결과 API 키가 필요합니다");
-        return;
-    }
-    esp_err_t err = gemini_start("");
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "속도 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
-        return;
-    }
-    s_speed_test = true;
-    s_test_started = xTaskGetTickCount();
-    memset(s_test_hist, 0, sizeof(s_test_hist));
-    s_test_idx = 0;
-    s_test_peak = 0;
-    ESP_LOGI(TAG, "속도 시험 시작: 전화 없이 AI 인사 음성을 %d초 동안 받습니다", SPEED_TEST_MS / 1000);
-}
-
-static void run_speed_test(void)
-{
-    if (!s_speed_test) {
-        return;
-    }
-    static uint8_t sink[1024];
-    while (gemini_pull_ai_audio(sink, sizeof(sink)) > 0) {
-        /* 소리는 버린다 — 받는 속도만 잰다 */
-    }
-    gemini_stats_t st;
-    gemini_get_stats(&st);
-    uint32_t window = st.rx_bytes - s_test_hist[s_test_idx];  /* 지금 - 1초 전 */
-    if (window > s_test_peak) {
-        s_test_peak = window;
-    }
-    s_test_hist[s_test_idx] = st.rx_bytes;
-    s_test_idx = (s_test_idx + 1) % SPEED_WINDOW_TICKS;
-    if (xTaskGetTickCount() - s_test_started >= pdMS_TO_TICKS(SPEED_TEST_MS)) {
-        stop_speed_test("시간 다 됨");
-    }
-}
-
-void agent_speed_test(void)
-{
-    const agent_msg_t m = {.kind = MSG_SPEED_TEST};
-    post(&m);
 }
 
 /* 통화 중 5초마다: 메모리, Gemini 수신 속도, AI 음성 끊김 */
