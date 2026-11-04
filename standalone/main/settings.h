@@ -18,13 +18,14 @@ typedef struct {
     char api_key[128];
     char model[64];
     int rings;            /* 벨이 몇 번 울리면 AI 가 받을지 */
+    char coex[8];         /* 무선 우선: balance | wifi | bt (블루투스 통화와 Wi-Fi 가 무선을 나눠 쓰는 비율) */
     char *prompt;         /* 지시문: 저장된 것이 없으면 펌웨어에 내장된 기본 지시문 */
     bool prompt_custom;
 } settings_t;
 
 void settings_load(settings_t *s);
 
-/* key: wifi_ssid, wifi_pass, api_key, model, rings */
+/* key: wifi_ssid, wifi_pass, api_key, model, rings, coex */
 esp_err_t settings_set(const char *key, const char *value);
 
 /* len 이 0 이면 저장된 지시문을 지우고 기본 지시문으로 돌아간다. */

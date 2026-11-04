@@ -30,6 +30,7 @@ function deviceHandle(line) {
     out(`cfg value api_key=${k.length > 8 ? k.slice(0, 4) + "..." + k.slice(-4) : k ? "(saved)" : ""}`);
     out(`cfg value model=${device.nvs.model || "gemini-3.8-live"}`);
     out(`cfg value rings=${device.nvs.rings || 2}`);
+    out(`cfg value coex=${device.nvs.coex || "balance"}`);
     if (device.version !== undefined) out(`cfg value version=${device.version}`);  // 이전 펌웨어는 버전을 안 알려 준다
     out(`cfg end show`);
   } else if (line === "cfg prompt get") {
@@ -110,6 +111,8 @@ const assert = (cond, msg) => { if (!cond) { console.error("FAIL:", msg); proces
   $("prompt").value = newPrompt;
   $("api_key").value = "AIzaNEWKEY999999";
   $("rings").value = "3";
+  assert($("coex").value === "balance", "무선 우선을 불러온다");
+  $("coex").value = "wifi";
   $("save").click();
   await sleep(4000);
 
@@ -117,6 +120,7 @@ const assert = (cond, msg) => { if (!cond) { console.error("FAIL:", msg); proces
   assert(device.nvs.api_key === "AIzaNEWKEY999999", "새 API 키 저장");
   assert(device.nvs.wifi_pass === "pw", "비워 둔 비밀번호는 그대로");
   assert(device.nvs.rings === "3", "벨 횟수 저장");
+  assert(device.nvs.coex === "wifi", "무선 우선 저장");
   assert(device.rebooted === 1, "저장 후 재시작");
   assert($("device-build").textContent.includes("(최신)") && $("device-build").className === "ok",
          `재시작 뒤 새 버전을 읽는다: ${$("device-build").textContent}`);

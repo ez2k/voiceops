@@ -8,6 +8,7 @@
 #define NVS_NAMESPACE   "cb_settings"
 #define DEFAULT_MODEL   "gemini-3.8-live"
 #define DEFAULT_RINGS   2
+#define DEFAULT_COEX    "balance"
 
 extern const char default_prompt[] asm("_binary_prompt_md_start");
 
@@ -24,6 +25,7 @@ void settings_load(settings_t *s)
     memset(s, 0, sizeof(*s));
     strlcpy(s->model, DEFAULT_MODEL, sizeof(s->model));
     s->rings = DEFAULT_RINGS;
+    strlcpy(s->coex, DEFAULT_COEX, sizeof(s->coex));
     s->prompt = (char *)default_prompt;
 
     nvs_handle_t h;
@@ -38,6 +40,11 @@ void settings_load(settings_t *s)
     get_str(h, "model", model, sizeof(model));
     if (model[0]) {
         strlcpy(s->model, model, sizeof(s->model));
+    }
+    char coex[sizeof(s->coex)];
+    get_str(h, "coex", coex, sizeof(coex));
+    if (coex[0]) {
+        strlcpy(s->coex, coex, sizeof(s->coex));
     }
     int32_t rings;
     if (nvs_get_i32(h, "rings", &rings) == ESP_OK) {
@@ -107,6 +114,13 @@ esp_err_t settings_set(const char *key, const char *value)
             return ESP_ERR_INVALID_ARG;
         }
         return with_nvs(write_rings, &rings);
+    }
+    if (strcmp(key, "coex") == 0) {
+        if (strcmp(value, "balance") != 0 && strcmp(value, "wifi") != 0 && strcmp(value, "bt") != 0) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        const kv_t kv = {key, value};
+        return with_nvs(write_str, &kv);
     }
     for (size_t i = 0; i < sizeof(STRINGS) / sizeof(STRINGS[0]); i++) {
         if (strcmp(key, STRINGS[i].key) == 0) {

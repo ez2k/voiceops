@@ -31,7 +31,7 @@
   button:disabled { opacity: .45; cursor: default; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
-  input, textarea { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+  input, textarea, select { width: 100%; font: inherit; color: var(--text); background: var(--bg);
                     border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   textarea { min-height: 260px; font-size: 13px; line-height: 1.5; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
@@ -81,8 +81,15 @@
       <div><label for="api_key">Gemini API 키</label><input id="api_key" type="password" autocomplete="off"></div>
       <div><label for="rings">자동응답까지 벨 횟수 (1번 ≈ 3초)</label><input id="rings" type="number" min="1" max="10" value="2"></div>
     </div>
-    <label for="model">Gemini Live 모델</label>
-    <input id="model" value="gemini-3.8-live">
+    <div class="grid">
+      <div><label for="model">Gemini Live 모델</label><input id="model" value="gemini-3.8-live"></div>
+      <div><label for="coex">무선 우선 (통화 중 AI 음성이 끊기면 Wi-Fi 우선)</label>
+        <select id="coex">
+          <option value="balance">균형 (기본)</option>
+          <option value="wifi">Wi-Fi 우선</option>
+          <option value="bt">블루투스 우선</option>
+        </select></div>
+    </div>
     <label for="prompt">AI 지시문 (회사 정보, 인사말, 업무 규칙) — 비우고 저장하면 기본 지시문으로 돌아갑니다</label>
     <textarea id="prompt" spellcheck="false"></textarea>
 
@@ -184,6 +191,7 @@ function onLine(raw) {
     if (key === "wifi_ssid") $("wifi_ssid").value = value;
     if (key === "model") $("model").value = value;
     if (key === "rings") $("rings").value = value;
+    if (key === "coex") $("coex").value = value;
     if (key === "version") showDeviceBuild(value);
     if (key === "wifi_pass") $("wifi_pass").placeholder = value ? "저장됨 — 바꿀 때만 입력" : "";
     if (key === "api_key") $("api_key").placeholder = value ? `저장됨 (${value}) — 바꿀 때만 입력` : "";
@@ -294,7 +302,7 @@ async function save() {
   $("save").disabled = true;
   try {
     setStatus("저장 중…");
-    const fields = ["wifi_ssid", "wifi_pass", "api_key", "model", "rings"];
+    const fields = ["wifi_ssid", "wifi_pass", "api_key", "model", "rings", "coex"];
     for (const key of fields) {
       const value = key === "wifi_pass" ? $(key).value : $(key).value.trim();
       if (value === "") continue;  // 빈 칸은 저장된 값을 그대로 둔다

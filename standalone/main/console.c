@@ -51,6 +51,7 @@ static void show(void)
     }
     reply("value model=%s", s->model);
     reply("value rings=%d", s->rings);
+    reply("value coex=%s", s->coex);
     reply("value prompt=%s %u", s->prompt_custom ? "custom" : "default", (unsigned)strlen(s->prompt));
     reply("value version=%s", esp_app_get_description()->version);
     reply("end show");

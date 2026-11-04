@@ -25,10 +25,12 @@
     "wss://generativelanguage.googleapis.com/ws/" \
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key="
 
-#define SEND_CHUNK_BYTES   640     /* 8kHz 16bit 40ms */
-#define CALLER_BUF_BYTES   4096    /* 상대 음성 대기열 (약 0.25초) */
+#define SEND_CHUNK_BYTES   1600    /* 8kHz 16bit 100ms — 블루투스와 무선을 나눠 쓰니 보내는 횟수를 줄인다 */
+#define CALLER_BUF_BYTES   4800    /* 상대 음성 대기열 (0.3초) */
 #define AI_RING_BYTES      16000   /* AI 음성 대기열 (1초). 차면 서버 수신을 잠시 멈춘다 */
-#define PREBUFFER_BYTES    4800    /* 지터 버퍼: AI 음성을 0.3초 모은 뒤 내보내기 시작 (Wi-Fi 출렁임 흡수) */
+#define PREBUFFER_MIN      4800    /* 지터 버퍼: AI 음성을 0.3초 모은 뒤 내보내기 시작 (Wi-Fi 출렁임 흡수) */
+#define PREBUFFER_STEP     3200    /* 말하는 도중 바닥나면 0.2초씩 더 모은다 (적응형) */
+#define PREBUFFER_MAX      12800   /* 최대 0.8초 (대기열 1초 안에서) */
 #define REST_BUF_BYTES     6144    /* 음성을 뺀 서버 메시지 JSON */
 #define TRANSCRIPT_MAX     400
 #define WS_SEND_TIMEOUT    pdMS_TO_TICKS(2000)
@@ -62,6 +64,7 @@ static char s_said_ai[TRANSCRIPT_MAX];
 static volatile bool s_playing;    /* 지터 버퍼가 차서 AI 음성을 내보내는 중 */
 static volatile bool s_turn_done;  /* AI 의 말 한 턴이 끝났다 → 남은 음성은 문턱 아래여도 내보낸다 */
 static volatile uint32_t s_rx_bytes, s_underruns, s_send_fails;
+static volatile size_t s_prebuffer = PREBUFFER_MIN;  /* 이번 통화의 지터 버퍼 문턱 */
 
 static void fail_once(const char *why)
 {
@@ -421,6 +424,7 @@ esp_err_t gemini_start(const char *caller_number)
     s_turn_done = false;
     s_rx_bytes = 0;
     s_underruns = 0;
+    s_prebuffer = PREBUFFER_MIN;
     s_send_fails = 0;
 
     const esp_websocket_client_config_t cfg = {
@@ -468,10 +472,10 @@ void gemini_push_caller_audio(const uint8_t *pcm, size_t len)
 
 size_t gemini_pull_ai_audio(uint8_t *pcm, size_t len)
 {
-    /* 지터 버퍼: 0.3초가 모이기 전에는 무음. 말 끝(턴 종료)의 짧은 꼬리는 바로 내보낸다. */
+    /* 지터 버퍼: 문턱만큼 모이기 전에는 무음. 말 끝(턴 종료)의 짧은 꼬리는 바로 내보낸다. */
     if (!s_playing) {
         size_t have = pcm_ring_count(&s_ai_audio);
-        if (have < PREBUFFER_BYTES && !(s_turn_done && have > 0)) {
+        if (have < s_prebuffer && !(s_turn_done && have > 0)) {
             return 0;
         }
         s_playing = true;
@@ -481,6 +485,9 @@ size_t gemini_pull_ai_audio(uint8_t *pcm, size_t len)
         s_playing = false;  /* 바닥났다 → 다시 모은다 */
         if (!s_turn_done) {
             s_underruns++;  /* 말하는 도중에 음성이 늦게 왔다 (네트워크가 못 따라옴) */
+            if (s_prebuffer < PREBUFFER_MAX) {
+                s_prebuffer += PREBUFFER_STEP;  /* 다음부터는 더 모았다가 내보낸다 (지연↑ 끊김↓) */
+            }
         }
     }
     return n;
@@ -492,6 +499,7 @@ void gemini_get_stats(gemini_stats_t *st)
     st->underruns = s_underruns;
     st->send_fails = s_send_fails;
     st->ai_buffered_ms = (uint32_t)(pcm_ring_count(&s_ai_audio) * 1000 / (GEMINI_CALL_RATE * 2));
+    st->prebuffer_ms = (uint32_t)(s_prebuffer * 1000 / (GEMINI_CALL_RATE * 2));
 }
 
 size_t gemini_pending_ai_audio(void)

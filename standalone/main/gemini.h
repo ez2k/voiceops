@@ -49,6 +49,7 @@ typedef struct {
     uint32_t underruns;       /* AI 가 말하는 도중 음성이 바닥난 횟수 (네트워크가 못 따라옴) */
     uint32_t send_fails;      /* 상대 음성 전송 실패 횟수 */
     uint32_t ai_buffered_ms;  /* 아직 폰으로 안 나간 AI 음성 */
+    uint32_t prebuffer_ms;    /* 지터 버퍼 문턱 (끊길 때마다 늘어난다) */
 } gemini_stats_t;
 
 void gemini_get_stats(gemini_stats_t *stats);
