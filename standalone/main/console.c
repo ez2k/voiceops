@@ -16,7 +16,7 @@
 #include "wifi.h"
 
 #define CONSOLE_UART   UART_NUM_0
-#define LINE_MAX       1100
+#define CONSOLE_LINE_MAX       1100
 #define PROMPT_LINE    300   /* base64 한 줄 길이 (4의 배수) */
 
 static const settings_t *s_running;
@@ -163,7 +163,7 @@ static void handle_line(char *line)
 
 static void console_task(void *arg)
 {
-    static char line[LINE_MAX];
+    static char line[CONSOLE_LINE_MAX];
     size_t len = 0;
     for (;;) {
         uint8_t c;
@@ -174,7 +174,7 @@ static void console_task(void *arg)
             line[len] = '\0';
             handle_line(line);
             len = 0;
-        } else if (c != '\r' && len < LINE_MAX - 1) {
+        } else if (c != '\r' && len < CONSOLE_LINE_MAX - 1) {
             line[len++] = (char)c;
         }
     }
