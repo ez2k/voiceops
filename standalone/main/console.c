@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "agent.h"
 #include "b64.h"
 #include "phone.h"
 #include "wifi.h"
@@ -152,6 +153,9 @@ static void handle_line(char *line)
     } else if (strcmp(line, "pair") == 0) {
         phone_pair();
         reply("ok pair");
+    } else if (strcmp(line, "aitest") == 0) {
+        agent_speed_test();
+        reply("ok aitest");
     } else if (strcmp(line, "status") == 0) {
         phone_status_t st;
         phone_get_status(&st);

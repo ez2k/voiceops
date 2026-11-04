@@ -36,11 +36,6 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 
-# AI 음성은 24kHz 고정이라 base64 로 약 64KB/s 를 실시간보다 빨리 받아야 한다.
-# 블루투스와 공존하면 Wi-Fi 가 모뎀 슬립(비콘 주기 ~100ms 로 깨어남)을 해야 해서, 한 번 깰 때 받는 양 =
-# TCP 수신 창이 속도를 정한다. 기본 5760B 창으로는 통화 중 10~30KB/s 에 그쳐 AI 음성이 끊겼다 → 3배로.
-CONFIG_LWIP_TCP_WND_DEFAULT=17280
-CONFIG_LWIP_TCP_RECVMBOX_SIZE=14
 # TLS 핸드셰이크(통화 중 약 4초)와 음성 처리를 빠르게
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 

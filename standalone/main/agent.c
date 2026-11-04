@@ -20,12 +20,15 @@
 #define RING_PERIOD_MS      3000    /* 설정의 "벨 N번" = N × 3초 (폰마다 RING 신호가 달라 시간으로 센다) */
 #define TICK_MS             200
 #define AUDIO_WAIT_MS       2000    /* AI 가 받았는데 폰이 음성 채널을 이만큼 안 열면 직접 연다 */
+#define SPEED_TEST_MS       15000   /* 속도 시험: 전화 없이 Gemini 인사 음성을 받는 시간 */
+#define SPEED_WINDOW_TICKS  (1000 / TICK_MS)
 
 typedef enum {
     MSG_PHONE,
     MSG_END_CALL,
     MSG_TRANSFER,
     MSG_AI_FAILED,
+    MSG_SPEED_TEST,
 } msg_kind_t;
 
 typedef struct {
@@ -51,6 +54,13 @@ static bool s_call_active;       /* 통화가 연결돼 있다 */
 static bool s_audio_on;          /* 통화 음성 채널이 열려 있다 (벨소리를 위해 받기 전에 열리기도 한다) */
 static int s_audio_rate;
 static char s_number[32];
+
+/* 속도 시험 (agent 태스크만 만진다) */
+static bool s_speed_test;
+static TickType_t s_test_started;
+static uint32_t s_test_hist[SPEED_WINDOW_TICKS];  /* 1초 동안의 누적 수신량 → 1초 최고 속도 */
+static unsigned s_test_idx;
+static uint32_t s_test_peak;
 
 static void post(const agent_msg_t *m)
 {
@@ -224,6 +234,9 @@ static void handle_phone(const agent_msg_t *m)
     case PHONE_EVT_CALLSETUP:
         ESP_LOGI(TAG, "callsetup=%d", m->value);
         if (m->value == 1) {
+            if (s_speed_test) {
+                stop_speed_test("전화가 와서 중단");
+            }
             reset_call();
             s_incoming = true;
             s_incoming_since = xTaskGetTickCount();
@@ -281,6 +294,70 @@ static void handle_phone(const agent_msg_t *m)
     }
 }
 
+/* ---- 속도 시험: 블루투스 통화 없이 Gemini 에서 AI 음성을 얼마나 빨리 받는지 잰다 ----
+ * 통화 중 수신 속도(call stats 의 rx)와 비교하면, 끊김이 블루투스·Wi-Fi 공존 때문인지 가릴 수 있다. */
+
+static void stop_speed_test(const char *why)
+{
+    gemini_stats_t st;
+    gemini_get_stats(&st);
+    gemini_stop();
+    s_speed_test = false;
+    ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
+             why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));
+}
+
+static void start_speed_test(void)
+{
+    if (s_speed_test || s_incoming || s_call_active || s_answered) {
+        ESP_LOGW(TAG, "통화 중이거나 이미 시험 중이라 속도 시험을 하지 않습니다");
+        return;
+    }
+    if (s_settings->api_key[0] == '\0' || !wifi_connected()) {
+        ESP_LOGW(TAG, "속도 시험에는 Wi-Fi 연결과 API 키가 필요합니다");
+        return;
+    }
+    esp_err_t err = gemini_start("");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "속도 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
+        return;
+    }
+    s_speed_test = true;
+    s_test_started = xTaskGetTickCount();
+    memset(s_test_hist, 0, sizeof(s_test_hist));
+    s_test_idx = 0;
+    s_test_peak = 0;
+    ESP_LOGI(TAG, "속도 시험 시작: 전화 없이 AI 인사 음성을 %d초 동안 받습니다", SPEED_TEST_MS / 1000);
+}
+
+static void run_speed_test(void)
+{
+    if (!s_speed_test) {
+        return;
+    }
+    static uint8_t sink[1024];
+    while (gemini_pull_ai_audio(sink, sizeof(sink)) > 0) {
+        /* 소리는 버린다 — 받는 속도만 잰다 */
+    }
+    gemini_stats_t st;
+    gemini_get_stats(&st);
+    uint32_t window = st.rx_bytes - s_test_hist[s_test_idx];  /* 지금 - 1초 전 */
+    if (window > s_test_peak) {
+        s_test_peak = window;
+    }
+    s_test_hist[s_test_idx] = st.rx_bytes;
+    s_test_idx = (s_test_idx + 1) % SPEED_WINDOW_TICKS;
+    if (xTaskGetTickCount() - s_test_started >= pdMS_TO_TICKS(SPEED_TEST_MS)) {
+        stop_speed_test("시간 다 됨");
+    }
+}
+
+void agent_speed_test(void)
+{
+    const agent_msg_t m = {.kind = MSG_SPEED_TEST};
+    post(&m);
+}
+
 /* 통화 중 5초마다: 메모리, Gemini 수신 속도, AI 음성 끊김 */
 static void log_call_stats(void)
 {
@@ -309,6 +386,7 @@ static void agent_task(void *arg)
         bool got = xQueueReceive(s_queue, &m, pdMS_TO_TICKS(TICK_MS)) == pdTRUE;
         check_auto_answer();
         check_ai_audio();
+        run_speed_test();
         if (s_ai_call && xTaskGetTickCount() - last_heap_log >= pdMS_TO_TICKS(HEAP_LOG_MS)) {
             last_heap_log = xTaskGetTickCount();
             log_call_stats();
@@ -330,8 +408,13 @@ static void agent_task(void *arg)
             wait_ai_quiet();
             hand_over();
             break;
+        case MSG_SPEED_TEST:
+            start_speed_test();
+            break;
         case MSG_AI_FAILED:
-            if (s_answered || s_ai_call) {
+            if (s_speed_test) {
+                stop_speed_test(m.text);
+            } else if (s_answered || s_ai_call) {
                 ESP_LOGE(TAG, "AI 연결 문제 (%s) — 사람에게 인계합니다", m.text);
                 hand_over();
             }

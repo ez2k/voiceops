@@ -9,3 +9,6 @@
 
 /* 블루투스(phone)와 Gemini 세션을 준비하고 agent 태스크를 시작한다. */
 void agent_start(const settings_t *settings);
+
+/* 전화 없이 Gemini 인사 음성을 받아 수신 속도를 잰다 (결과는 로그). 통화 중에는 무시한다. */
+void agent_speed_test(void);
