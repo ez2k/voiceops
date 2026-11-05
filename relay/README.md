@@ -15,7 +15,21 @@ Gemini API 키는 이 서버에만 두고, 기기에는 이 서버용 토큰만 
 - 첫 인사, 도구(통화 끝내기·사람 인계·접수 메모), 끼어들기, 자막, 토큰 사용량을 펌웨어가 아는 모양으로 전달
 - **접수 메모를 `notes.jsonl`에, 통화마다 대화록을 `날짜-시각_번호.txt`로 남김** (기본 위치 `/var/lib/geminirelay`)
 
-## 설치 (리눅스, Python 3.11 이상)
+## 한 번에 설치 (Debian·Ubuntu)
+
+서버에서 아래 한 줄을 실행하고 Gemini API 키를 입력하면 끝입니다. 마지막에 **기기에 넣을 AI 서버 주소와 토큰**을 보여 줍니다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ez2k/voiceops/main/relay/install.sh | sudo bash
+```
+
+- 패키지 설치 → 코드(`/opt/voiceops`) → 파이썬 가상환경 → 키·토큰(`/etc/geminirelay.env`) → systemd 서비스 → Caddy 로 Let's Encrypt 인증서(`wss://`)
+- 도메인이 있으면 `… | sudo bash -s -- --domain relay.example.com`. 없으면 `<공인IP>.sslip.io` 를 씁니다 (IP 를 이름으로 바꿔 주는 무료 DNS).
+- 80·443 을 이미 다른 웹 서버(nginx 등)가 쓰고 있으면 Caddy 를 설치하지 않고, 그 서버에 넣을 설정을 보여 줍니다. 이미 쓰던 Caddy 설정도 바꾸지 않습니다.
+- 클라우드 서버라면 보안 그룹(방화벽)에서 80·443 을 열어 두세요.
+- 다시 실행하면 코드만 새로 받고 서비스를 다시 띄웁니다 (키·토큰은 그대로).
+
+## 손으로 설치 (다른 배포판, Python 3.10 이상)
 
 ```sh
 sudo useradd --system --home /opt/voiceops geminirelay

@@ -67,3 +67,18 @@ jobs:
             openssl verify -CAfile standalone/main/server_roots.pem -untrusted chain.pem cert1.pem
             rm -f cert*.pem chain.pem
           done
+
+  # relay/install.sh 를 실제 우분투(systemd)에서 끝까지 돌려 본다 (암호화 없는 --no-tls 경로).
+  relay-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the installer and probe the service
+        run: |
+          printf 'GEMINI_API_KEY=dummy\nRELAY_TOKEN=%s\n' "$(openssl rand -hex 24)" | sudo tee /etc/geminirelay.env >/dev/null
+          sudo VOICEOPS_REPO="$GITHUB_WORKSPACE" bash relay/install.sh --no-tls
+          systemctl is-active geminirelay
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/v1/realtime)" = 401
+          # 다시 실행해도 된다 (업데이트)
+          sudo VOICEOPS_REPO="$GITHUB_WORKSPACE" bash relay/install.sh --no-tls
+          sudo journalctl -u geminirelay -n 5 --no-pager
