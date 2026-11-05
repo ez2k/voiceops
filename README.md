@@ -71,6 +71,7 @@ ESP-IDF가 설치된 PC라면 직접 구울 수도 있습니다: `cd standalone 
 | "견적 받고 싶어요, 저는 홍길동이에요" | `AI 도구: save_note …`, `접수 메모 (발신 …): {…}` |
 | "사람이랑 통화할게요" | `사람에게 인계 …` → 소리가 **폰 본체**로 넘어감 (폰을 들고 이어서 통화) |
 | "됐습니다, 감사합니다" | `AI 도구: end_call` → `통화 끝` |
+| 이 폰으로 직접 전화 걸기 | `폰에서 거는 전화 — 소리는 폰 본체로` — AI 는 끼지 않고 평소처럼 폰으로 통화 |
 | 통화 끝 | `session closed — 토큰: 입력 음성 …·글 … (그중 캐시 …), 출력 음성 …·글 …` (요금 확인용) |
 | 통화 중 5초마다 | `call stats: heap free=… min=… big=… \| ai rx=…KB/s buffered=…ms prebuf=…ms underruns=… send_fails=…` |
 

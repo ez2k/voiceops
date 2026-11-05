@@ -51,6 +51,7 @@ static int s_rings;              /* 폰이 보낸 RING 신호 수 (진단용) */
 static bool s_answered;          /* AI 가 받은 전화다 */
 static TickType_t s_answered_at;
 static bool s_audio_requested;   /* 받은 뒤 음성 채널을 직접 열어 달라고 했다 (한 번만) */
+static bool s_outgoing;          /* 사람이 폰에서 거는 전화 (AI 는 끼지 않는다) */
 static bool s_call_active;       /* 통화가 연결돼 있다 */
 static bool s_audio_on;          /* 통화 음성 채널이 열려 있다 (벨소리를 위해 받기 전에 열리기도 한다) */
 static int s_audio_rate;
@@ -134,6 +135,7 @@ static void reset_call(void)
     s_rings = 0;
     s_answered = false;
     s_audio_requested = false;
+    s_outgoing = false;
     s_number[0] = '\0';
 }
 
@@ -366,6 +368,15 @@ static void handle_phone(const agent_msg_t *m)
             s_incoming = true;
             s_incoming_since = xTaskGetTickCount();
             ESP_LOGI(TAG, "전화가 옵니다 (%d초 뒤 AI 가 받습니다)", s_settings->rings * RING_PERIOD_MS / 1000);
+        } else if ((m->value == 2 || m->value == 3) && !s_outgoing) {
+            /* 2 = 거는 중, 3 = 상대 쪽 벨이 울리는 중. 폰은 거는 전화 소리도 이 기기로 보내므로 바로 폰 본체로 돌린다
+             * (그대로 두면 사람이 신호음을 못 듣는다) */
+            reset_call();
+            s_outgoing = true;
+            ESP_LOGI(TAG, "폰에서 거는 전화 — 소리는 폰 본체로");
+            if (s_audio_on) {
+                phone_audio_disconnect();
+            }
         } else if (m->value == 0) {
             s_incoming = false;  /* 받았거나, 끊겼거나 */
         }
@@ -399,6 +410,8 @@ static void handle_phone(const agent_msg_t *m)
         s_audio_rate = m->value;
         if (s_test == TEST_CALL_WAIT) {
             on_test_audio_on(m->value);
+        } else if (s_outgoing) {
+            phone_audio_disconnect();
         } else if (s_answered) {
             start_ai_audio();
         } else if (s_call_active) {
