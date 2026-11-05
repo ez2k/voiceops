@@ -49,7 +49,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl openssl ca-certificates >/dev/null
 
-# 파이썬은 uv 로 준비한다: 시스템 파이썬이 3.10 이상이면 그것을, 아니면(예: Ubuntu 20.04 의 3.8) 독립 실행형 파이썬을 받는다
+# 파이썬 3.12 는 uv 로 준비한다: 시스템에 있으면 그것을, 없으면(예: Ubuntu 20.04 의 3.8) 독립 실행형 파이썬을 받는다
 if ! command -v uv >/dev/null; then
     case "$(uname -m)" in
         x86_64) UV_ARCH=x86_64 ;;
@@ -75,7 +75,7 @@ fi
 uv_env=(UV_PYTHON_INSTALL_DIR="$DIR/.python")   # 받은 파이썬도 이 디렉토리 안에
 [ -n "${UV_PYTHON_PREFERENCE:-}" ] && uv_env+=(UV_PYTHON_PREFERENCE="$UV_PYTHON_PREFERENCE")
 rm -rf "$DIR/relay/.venv"
-as_user env "${uv_env[@]}" uv venv -q --python ">=3.10" "$DIR/relay/.venv"
+as_user env "${uv_env[@]}" uv venv -q --python 3.12 "$DIR/relay/.venv"   # 라이브러리 바퀴(wheel)가 다 있는 안정판
 as_user env "${uv_env[@]}" uv pip install -q --python "$DIR/relay/.venv/bin/python" -r "$DIR/relay/requirements.txt"
 echo "파이썬: $("$DIR/relay/.venv/bin/python" -V)"
 
