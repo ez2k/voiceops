@@ -15,7 +15,7 @@
 typedef struct {
     char wifi_ssid[33];
     char wifi_pass[65];
-    char api_key[128];
+    char api_key[256];    /* OpenAI API 키 (sk-proj-… 는 160자 안팎) */
     char model[64];
     int rings;            /* 벨이 몇 번 울리면 AI 가 받을지 */
     char coex[8];         /* 무선 우선: balance | wifi | bt (블루투스 통화와 Wi-Fi 가 무선을 나눠 쓰는 비율) */

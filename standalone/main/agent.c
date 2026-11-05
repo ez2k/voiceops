@@ -9,7 +9,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
-#include "gemini.h"
+#include "realtime.h"
 #include "phone.h"
 #include "wifi.h"
 
@@ -90,13 +90,13 @@ static void on_phone_event(const phone_event_t *e)
 static void on_phone_rx_audio(const uint8_t *pcm, size_t len)
 {
     if (s_ai_call) {
-        gemini_push_caller_audio(pcm, len);
+        realtime_push_caller_audio(pcm, len);
     }
 }
 
 static size_t fill_phone_tx_audio(uint8_t *pcm, size_t len)
 {
-    return s_ai_call ? gemini_pull_ai_audio(pcm, len) : 0;
+    return s_ai_call ? realtime_pull_ai_audio(pcm, len) : 0;
 }
 
 static void on_ai_end_call(void)
@@ -141,7 +141,7 @@ static void reset_call(void)
 static void start_ai_audio(void)
 {
     if (s_answered && s_audio_on && !s_ai_call) {
-        gemini_audio_start(s_audio_rate);
+        realtime_audio_start(s_audio_rate);
         s_ai_call = true;
         ESP_LOGI(TAG, "AI 응대 시작");
         log_heap("call start");
@@ -151,14 +151,14 @@ static void start_ai_audio(void)
 static void try_answer(void)
 {
     if (s_settings->api_key[0] == '\0') {
-        ESP_LOGW(TAG, "Gemini API 키가 없어 AI 가 받지 않습니다");
+        ESP_LOGW(TAG, "OpenAI API 키가 없어 AI 가 받지 않습니다");
         return;
     }
     if (!wifi_connected()) {
         ESP_LOGW(TAG, "Wi-Fi 가 연결되지 않아 AI 가 받지 않습니다 — 사람이 받아 주세요");
         return;
     }
-    esp_err_t err = gemini_start(s_number, GEMINI_OPEN_GREETING);
+    esp_err_t err = realtime_start(s_number, RT_OPEN_GREETING);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
         return;
@@ -166,7 +166,7 @@ static void try_answer(void)
     err = phone_answer();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "전화를 받지 못했습니다: %s", esp_err_to_name(err));
-        gemini_stop();
+        realtime_stop();
         return;
     }
     s_answered = true;
@@ -203,7 +203,7 @@ static void wait_ai_quiet(void)
 {
     const TickType_t start = xTaskGetTickCount();
     vTaskDelay(pdMS_TO_TICKS(500));
-    while (gemini_pending_ai_audio() > 0 && xTaskGetTickCount() - start < pdMS_TO_TICKS(HANDOFF_TIMEOUT_MS)) {
+    while (realtime_pending_ai_audio() > 0 && xTaskGetTickCount() - start < pdMS_TO_TICKS(HANDOFF_TIMEOUT_MS)) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -215,11 +215,11 @@ static void hand_over(void)
     s_answered = false;
     s_ai_call = false;
     phone_audio_disconnect();
-    gemini_stop();
+    realtime_stop();
 }
 
 /* ---- 속도 시험 ----
- * radio: 블루투스 통화 없이 Gemini 에서 AI 음성을 얼마나 빨리 받는지 잰다 (소리는 버림).
+ * radio: 블루투스 통화 없이 서버에서 AI 음성을 얼마나 빨리 받는지 잰다 (소리는 버림).
  * call : 전화 없이 폰의 통화 음성 채널(블루투스 SCO)만 열고, 실제 통화와 똑같이 AI 음성을 폰으로 흘린다.
  *        블루투스 통화가 무선을 차지하는 상황을 전화 없이 재현한다 (폰이 통화 없이 채널을 열어 줘야 한다).
  * 두 시험 모두 AI 에게 30초쯤 길게 말하게 해서 끊김이 잘 드러나게 한다. */
@@ -234,11 +234,11 @@ static void begin_measure(void)
 
 static void stop_speed_test(const char *why)
 {
-    gemini_stats_t st;
-    gemini_get_stats(&st);
+    realtime_stats_t st;
+    realtime_get_stats(&st);
     const bool call_like = s_test == TEST_CALL || s_test == TEST_CALL_WAIT;
     s_ai_call = false;
-    gemini_stop();
+    realtime_stop();
     if (call_like) {
         phone_audio_disconnect();
         ESP_LOGI(TAG, "통화 흉내 시험 끝 (%s, 무선 우선 %s): 모두 %uKB, 1초 최고 %uKB/s, 끊김 %u번, 버퍼 %ums, "
@@ -246,7 +246,7 @@ static void stop_speed_test(const char *why)
                  why, s_settings->coex, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024),
                  (unsigned)st.underruns, (unsigned)st.prebuffer_ms, (unsigned)st.send_fails);
     } else {
-        ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — 통화 중 끊기지 않으려면 약 64KB/s 필요",
+        ESP_LOGI(TAG, "속도 시험 끝 (%s): 모두 %uKB, 1초 최고 %uKB/s — AI 음성은 실시간으로 약 11KB/s",
                  why, (unsigned)(st.rx_bytes / 1024), (unsigned)(s_test_peak / 1024));
     }
     s_test = TEST_OFF;
@@ -273,7 +273,7 @@ static void start_speed_test(bool call_like)
         ESP_LOGI(TAG, "통화 흉내 시험: 폰에 통화 음성 채널을 열어 달라고 했습니다");
         return;
     }
-    esp_err_t err = gemini_start("", GEMINI_OPEN_SPEED_TEST);
+    esp_err_t err = realtime_start("", RT_OPEN_SPEED_TEST);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "속도 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
         return;
@@ -286,13 +286,13 @@ static void start_speed_test(bool call_like)
 /* 통화 흉내 시험: 음성 채널이 열렸다 → 실제 통화와 같은 경로로 AI 를 붙인다 */
 static void on_test_audio_on(int rate)
 {
-    esp_err_t err = gemini_start("", GEMINI_OPEN_SPEED_TEST);
+    esp_err_t err = realtime_start("", RT_OPEN_SPEED_TEST);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "통화 흉내 시험: AI 세션을 열지 못했습니다: %s", esp_err_to_name(err));
         stop_speed_test("AI 세션 실패");
         return;
     }
-    gemini_audio_start(rate);
+    realtime_audio_start(rate);
     s_ai_call = true;
     s_test = TEST_CALL;
     begin_measure();
@@ -313,12 +313,12 @@ static void run_speed_test(void)
     }
     if (s_test == TEST_RADIO) {
         static uint8_t sink[1024];
-        while (gemini_pull_ai_audio(sink, sizeof(sink)) > 0) {
+        while (realtime_pull_ai_audio(sink, sizeof(sink)) > 0) {
             /* 소리는 버린다 — 받는 속도만 잰다 (통화 흉내 시험은 블루투스가 실시간으로 꺼내 간다) */
         }
     }
-    gemini_stats_t st;
-    gemini_get_stats(&st);
+    realtime_stats_t st;
+    realtime_get_stats(&st);
     uint32_t window = st.rx_bytes - s_test_hist[s_test_idx];  /* 지금 - 1초 전 */
     if (window > s_test_peak) {
         s_test_peak = window;
@@ -388,7 +388,7 @@ static void handle_phone(const agent_msg_t *m)
         } else {
             if (s_answered || s_ai_call) {
                 s_ai_call = false;
-                gemini_stop();
+                realtime_stop();
             }
             reset_call();
             ESP_LOGI(TAG, "통화 끝");
@@ -424,18 +424,18 @@ static void handle_phone(const agent_msg_t *m)
     }
 }
 
-/* 통화 중 5초마다: 메모리, Gemini 수신 속도, AI 음성 끊김 */
+/* 통화 중 5초마다: 메모리, AI 서버 수신 속도, AI 음성 끊김 */
 static void log_call_stats(void)
 {
     static uint32_t last_rx;
     static TickType_t last_tick;
-    gemini_stats_t st;
-    gemini_get_stats(&st);
+    realtime_stats_t st;
+    realtime_get_stats(&st);
     TickType_t now = xTaskGetTickCount();
     uint32_t ms = (uint32_t)((now - last_tick) * portTICK_PERIOD_MS);
     uint32_t rx = st.rx_bytes >= last_rx ? st.rx_bytes - last_rx : st.rx_bytes;
     /* big = 가장 큰 연속 빈 블록 (TLS 가 서버 레코드 하나(최대 16KB)를 통째로 받을 자리) */
-    ESP_LOGI(TAG, "call stats: heap free=%u min=%u big=%u | gemini rx=%uKB/s buffered=%ums prebuf=%ums underruns=%u send_fails=%u",
+    ESP_LOGI(TAG, "call stats: heap free=%u min=%u big=%u | ai rx=%uKB/s buffered=%ums prebuf=%ums underruns=%u send_fails=%u",
              (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
              (unsigned)(ms ? rx / ms : 0), (unsigned)st.ai_buffered_ms, (unsigned)st.prebuffer_ms,
@@ -502,18 +502,18 @@ void agent_start(const settings_t *settings)
     phone_start(&phone_cb, DEVICE_NAME);
     log_heap("after bluetooth");
 
-    const gemini_callbacks_t gemini_cb = {
+    const realtime_callbacks_t rt_cb = {
         .on_end_call = on_ai_end_call,
         .on_transfer = on_ai_transfer,
         .on_failed = on_ai_failed,
     };
-    const gemini_config_t gemini_cfg = {
+    const realtime_config_t rt_cfg = {
         .api_key = settings->api_key,
         .model = settings->model,
         .prompt = settings->prompt,
     };
-    ESP_ERROR_CHECK(gemini_init(&gemini_cb, &gemini_cfg));
-    log_heap("after gemini buffers");
+    ESP_ERROR_CHECK(realtime_init(&rt_cb, &rt_cfg));
+    log_heap("after AI buffers");
 
     xTaskCreate(agent_task, "agent", 4096, NULL, 4, NULL);
 }

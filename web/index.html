@@ -79,11 +79,11 @@
     <div class="grid">
       <div><label for="wifi_ssid">Wi-Fi 이름</label><input id="wifi_ssid" autocomplete="off"></div>
       <div><label for="wifi_pass">Wi-Fi 비밀번호</label><input id="wifi_pass" type="password" autocomplete="new-password"></div>
-      <div><label for="api_key">Gemini API 키</label><input id="api_key" type="password" autocomplete="off"></div>
+      <div><label for="api_key">OpenAI API 키</label><input id="api_key" type="password" autocomplete="off"></div>
       <div><label for="rings">자동응답까지 벨 횟수 (1번 ≈ 3초)</label><input id="rings" type="number" min="1" max="10" value="2"></div>
     </div>
     <div class="grid">
-      <div><label for="model">Gemini Live 모델</label><input id="model" value="gemini-3.8-live"></div>
+      <div><label for="model">OpenAI Realtime 모델 (gpt-realtime-2.1-mini 또는 gpt-realtime-2.1)</label><input id="model" value="gpt-realtime-2.1-mini"></div>
       <div><label for="coex">무선 우선 (통화 중 AI 음성이 끊기면 Wi-Fi 우선)</label>
         <select id="coex">
           <option value="balance">균형 (기본)</option>

@@ -29,7 +29,7 @@ CONFIG_BT_HFP_WBS_ENABLE=n
 CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1=y
 
-# Gemini 서버는 내장한 Google 루트 인증서(main/google_roots.pem)로 확인한다 — 기본 번들은 쓰지 않는다
+# AI 서버(api.openai.com)는 내장한 Google Trust Services 루트(main/google_roots.pem)로 확인한다 — 기본 번들은 쓰지 않는다
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 
 # PSRAM 이 없으니 TLS 버퍼는 필요할 때만 잡는다

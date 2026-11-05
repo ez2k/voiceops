@@ -6,7 +6,7 @@
 #include "nvs.h"
 
 #define NVS_NAMESPACE   "cb_settings"
-#define DEFAULT_MODEL   "gemini-3.8-live"
+#define DEFAULT_MODEL   "gpt-realtime-2.1-mini"
 #define DEFAULT_RINGS   2
 #define DEFAULT_COEX    "balance"
 

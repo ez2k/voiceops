@@ -28,7 +28,7 @@ function deviceHandle(line) {
     out(`cfg value wifi_pass=${device.nvs.wifi_pass ? "(saved)" : ""}`);
     const k = device.nvs.api_key || "";
     out(`cfg value api_key=${k.length > 8 ? k.slice(0, 4) + "..." + k.slice(-4) : k ? "(saved)" : ""}`);
-    out(`cfg value model=${device.nvs.model || "gemini-3.8-live"}`);
+    out(`cfg value model=${device.nvs.model || "gpt-realtime-2.1-mini"}`);
     out(`cfg value rings=${device.nvs.rings || 2}`);
     out(`cfg value coex=${device.nvs.coex || "balance"}`);
     if (device.version !== undefined) out(`cfg value version=${device.version}`);  // 이전 펌웨어는 버전을 안 알려 준다
@@ -89,14 +89,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const assert = (cond, msg) => { if (!cond) { console.error("FAIL:", msg); process.exitCode = 1; } else console.log("ok:", msg); };
 
 (async () => {
-  device.nvs = { wifi_ssid: "office", wifi_pass: "pw", api_key: "AIzaSyABCDEFGH1234" };
+  device.nvs = { wifi_ssid: "office", wifi_pass: "pw", api_key: "sk-proj-ABCDEFGH1234" };
 
   $("connect").click();
   await sleep(2200);
   assert(port.baud === 115200, "115200 으로 연다");
   assert(port.signals && port.signals.dataTerminalReady === false && port.signals.requestToSend === false, "DTR/RTS 를 내린다");
   assert($("wifi_ssid").value === "office", "Wi-Fi 이름을 불러온다");
-  assert($("api_key").placeholder.includes("AIza...1234"), "API 키는 가려서 보여 준다");
+  assert($("api_key").placeholder.includes("sk-p...1234"), "API 키는 가려서 보여 준다");
   assert($("prompt").value === DEFAULT_PROMPT, "지시문(한글)을 불러온다");
   assert(!$("save").disabled, "저장 버튼이 켜진다");
   assert($("page-build").textContent === PAGE_BUILD, "페이지에 빌드 번호를 보여 준다");
@@ -109,7 +109,7 @@ const assert = (cond, msg) => { if (!cond) { console.error("FAIL:", msg); proces
   // 설정 바꾸고 저장: 긴 한글 지시문 + 새 API 키, 비밀번호는 비워 둔다
   const newPrompt = "# 역할\n" + "당신은 OO회사의 AI 직원입니다. 견적·A/S 문의를 받습니다.\n".repeat(60);
   $("prompt").value = newPrompt;
-  $("api_key").value = "AIzaNEWKEY999999";
+  $("api_key").value = "sk-proj-NEWKEY999999";
   $("rings").value = "3";
   assert($("coex").value === "balance", "무선 우선을 불러온다");
   $("coex").value = "wifi";
@@ -117,7 +117,7 @@ const assert = (cond, msg) => { if (!cond) { console.error("FAIL:", msg); proces
   await sleep(4000);
 
   assert(device.prompt === newPrompt, `지시문이 바이트 그대로 저장된다 (${Buffer.byteLength(newPrompt)}B)`);
-  assert(device.nvs.api_key === "AIzaNEWKEY999999", "새 API 키 저장");
+  assert(device.nvs.api_key === "sk-proj-NEWKEY999999", "새 API 키 저장");
   assert(device.nvs.wifi_pass === "pw", "비워 둔 비밀번호는 그대로");
   assert(device.nvs.rings === "3", "벨 횟수 저장");
   assert(device.nvs.coex === "wifi", "무선 우선 저장");

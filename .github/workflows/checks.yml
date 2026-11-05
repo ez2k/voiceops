@@ -34,7 +34,9 @@ jobs:
         with:
           node-version: "22"
       - name: Standalone C modules
-        run: sh standalone/host_test/run.sh
+        run: |
+          sudo apt-get install -y --no-install-recommends libcjson-dev
+          sh standalone/host_test/run.sh
       - name: PC bridge
         run: |
           pip install pyserial numpy soxr google-genai pytest
@@ -42,3 +44,21 @@ jobs:
       - name: Web settings page
         run: |
           cd web/test && npm install --no-audit --no-fund && npm test
+
+  # 펌웨어에 내장한 루트 인증서(google_roots.pem)로 AI 서버의 실제 인증서 체인이 확인되는지.
+  # 서버가 인증서 발급처를 바꾸면 여기서 먼저 깨진다 (기기에서는 "No matching trusted root" 로 연결 실패).
+  tls-roots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify api.openai.com and api.x.ai chains against the embedded roots
+        run: |
+          set -e
+          for host in api.openai.com api.x.ai; do
+            openssl s_client -connect "$host:443" -servername "$host" -showcerts </dev/null 2>/dev/null \
+              | awk '/BEGIN CERT/{n++} n{print > ("cert" n ".pem")} /END CERT/{}'
+            cat cert[2-9].pem > chain.pem 2>/dev/null || true
+            echo "== $host: $(openssl x509 -in cert1.pem -noout -issuer)"
+            openssl verify -CAfile standalone/main/google_roots.pem -untrusted chain.pem cert1.pem
+            rm -f cert*.pem chain.pem
+          done
