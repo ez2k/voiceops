@@ -20,6 +20,7 @@ import asyncio
 import base64
 import json
 import logging
+import wave
 from datetime import datetime
 from pathlib import Path
 
@@ -46,7 +47,8 @@ class DeviceSession:
     data_dir    접수 메모(notes.jsonl)와 대화록을 남길 곳
     """
 
-    def __init__(self, send, messages, client: genai.Client, model: str, data_dir: Path, peer: str = "") -> None:
+    def __init__(self, send, messages, client: genai.Client, model: str, data_dir: Path, peer: str = "",
+                 record: bool = True) -> None:
         self._send_json = send
         self._messages = messages
         self._client = client
@@ -62,6 +64,8 @@ class DeviceSession:
         self._heard = ""
         self._transcript: list[str] = []
         self._started = datetime.now()
+        self._record = record
+        self._wav: dict[str, wave.Wave_write] = {}  # 통화 녹음: caller(기기에서 온 소리), ai(기기로 보낸 소리)
 
     async def _send(self, msg: dict) -> None:
         await self._send_json(msg)
@@ -97,6 +101,8 @@ class DeviceSession:
             log.warning("%s Gemini 오류: %r", self._peer, e)
             await self._error(f"Gemini: {e}")
         finally:
+            for w in self._wav.values():
+                w.close()
             self._save_transcript()
             log.info("%s 세션 끝", self._peer)
 
@@ -136,6 +142,7 @@ class DeviceSession:
             kind = msg.get("type")
             if kind == "input_audio_buffer.append":
                 pcm = ulaw.decode(base64.b64decode(msg.get("audio", "")))
+                self._write_wav("caller", pcm)
                 await gemini.send_realtime_input(audio=types.Blob(data=pcm.astype("<i2").tobytes(),
                                                                   mime_type=f"audio/pcm;rate={CALL_RATE}"))
             elif kind == "conversation.item.create":
@@ -198,6 +205,7 @@ class DeviceSession:
             chunk = bytes(resp["buf"][:DELTA_BYTES])
             del resp["buf"][:DELTA_BYTES]
             resp["audio"] = True
+            self._write_wav("ai", ulaw.decode(chunk))  # 기기가 받는 그대로 (μ-law 를 다시 푼 소리)
             await self._send({"type": "response.output_audio.delta", "response_id": resp["id"],
                               "item_id": resp["item_id"], "output_index": 0, "content_index": 0,
                               "delta": base64.b64encode(chunk).decode()})
@@ -273,6 +281,21 @@ class DeviceSession:
         self._data_dir.mkdir(parents=True, exist_ok=True)
         with open(self._data_dir / "notes.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(note, ensure_ascii=False) + "\n")
+
+    def _write_wav(self, kind: str, pcm: np.ndarray) -> None:
+        """통화 녹음 (8kHz 16bit). 상대 소리와 AI 소리를 따로 남긴다 — 어느 쪽이 이상한지 들어 보고 가린다."""
+        if not self._record or pcm.size == 0:
+            return
+        w = self._wav.get(kind)
+        if w is None:
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            name = f"{self._started:%Y%m%d-%H%M%S}_{self._caller or 'unknown'}_{kind}.wav"
+            w = wave.open(str(self._data_dir / name), "wb")
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(CALL_RATE)
+            self._wav[kind] = w
+        w.writeframes(pcm.astype("<i2").tobytes())
 
     def _save_transcript(self) -> None:
         if not self._transcript:

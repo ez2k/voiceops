@@ -217,6 +217,11 @@ def test_call_flow(relay):
         notes = (data_dir / "notes.jsonl").read_text(encoding="utf-8").splitlines()
         assert json.loads(notes[0])["caller"] == "01012345678"
         assert json.loads(notes[0])["request"] == "견적"
+        import wave
+        with wave.open(str(next(data_dir.glob("*_01012345678_caller.wav")))) as w:
+            assert (w.getframerate(), w.getnframes()) == (8000, 800)      # 기기에서 온 0.1초
+        with wave.open(str(next(data_dir.glob("*_01012345678_ai.wav")))) as w:
+            assert w.getframerate() == 8000 and w.getnframes() >= 3900   # 기기로 보낸 AI 소리
         transcripts = list(data_dir.glob("*_01012345678.txt"))
         assert transcripts and "상대: 견적 받고 싶어요" in transcripts[0].read_text(encoding="utf-8")
 

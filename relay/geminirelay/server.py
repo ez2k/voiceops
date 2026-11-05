@@ -18,7 +18,8 @@ log = logging.getLogger("geminirelay")
 PATH = "/v1/realtime"
 
 
-def make_server(host: str, port: int, token: str, client: genai.Client, default_model: str, data_dir: Path):
+def make_server(host: str, port: int, token: str, client: genai.Client, default_model: str, data_dir: Path,
+                record: bool = True):
     """serve() 를 돌려준다 (`async with` 로 쓴다)."""
 
     def check(connection: ServerConnection, request: Request) -> Response | None:
@@ -50,7 +51,7 @@ def make_server(host: str, port: int, token: str, client: genai.Client, default_
 
         peer = f"{ws.remote_address[0]}" if ws.remote_address else "?"
         log.info("%s 기기 연결", peer)
-        await DeviceSession(send, messages(), client, model, data_dir, peer).run()
+        await DeviceSession(send, messages(), client, model, data_dir, peer, record).run()
 
     # 기기(ESP32)는 메모리가 적다: 압축(permessage-deflate)을 쓰지 않는다
     return serve(handle, host, port, process_request=check, compression=None, max_size=2**20)

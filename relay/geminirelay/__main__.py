@@ -18,7 +18,8 @@ def main() -> None:
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--model", default=os.environ.get("GEMINI_MODEL", "gemini-3.8-live"), help="Gemini Live 모델")
     p.add_argument("--data-dir", type=Path, default=Path(os.environ.get("RELAY_DATA_DIR", "calls")),
-                   help="접수 메모(notes.jsonl)와 대화록을 남길 곳")
+                   help="접수 메모(notes.jsonl), 대화록, 통화 녹음(WAV)을 남길 곳")
+    p.add_argument("--no-record", action="store_true", help="통화 녹음(WAV)을 남기지 않는다")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -29,7 +30,8 @@ def main() -> None:
         sys.exit("GEMINI_API_KEY 환경변수가 필요합니다")
 
     async def run() -> None:
-        async with make_server(args.host, args.port, token, genai.Client(), args.model, args.data_dir) as server:
+        async with make_server(args.host, args.port, token, genai.Client(), args.model, args.data_dir,
+                               record=not args.no_record) as server:
             logging.info("듣는 중: ws://%s:%d%s (모델 %s)", args.host, args.port, PATH, args.model)
             await server.serve_forever()
 
