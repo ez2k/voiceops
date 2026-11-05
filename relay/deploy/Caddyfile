@@ -1,0 +1,10 @@
+# /etc/caddy/Caddyfile — relay.example.com 을 이 서버를 가리키는 도메인으로 바꾼다.
+{
+	# Let's Encrypt 인증서만 받는다. 기기(ESP32)에 넣어 둔 루트가 ISRG(Let's Encrypt)라서,
+	# Caddy 의 다른 발급처(ZeroSSL) 인증서로는 기기가 연결하지 못한다.
+	cert_issuer acme
+}
+
+relay.example.com {
+	reverse_proxy 127.0.0.1:8765
+}

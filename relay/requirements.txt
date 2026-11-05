@@ -1,0 +1,4 @@
+websockets>=15
+google-genai>=2.34
+numpy>=1.26
+soxr>=0.5

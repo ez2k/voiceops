@@ -8,3 +8,5 @@ bridge/calls/
 web/test/node_modules/
 __pycache__/
 .pytest_cache/
+relay/.venv/
+relay/calls/

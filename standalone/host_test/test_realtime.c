@@ -22,7 +22,7 @@ static int s_failures;
 
 /* ---- 가짜 ESP-IDF ---- */
 
-const char test_roots_pem[] __asm__("_binary_google_roots_pem_start") = "-----BEGIN CERTIFICATE-----";
+const char test_roots_pem[] __asm__("_binary_server_roots_pem_start") = "-----BEGIN CERTIFICATE-----";
 
 const char *esp_err_to_name(esp_err_t code) { return code == ESP_OK ? "ESP_OK" : "ESP_ERR"; }
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return (SemaphoreHandle_t)1; }
@@ -147,7 +147,7 @@ static void on_failed(const char *why) { (void)why; s_fails++; }
 static void test_call(void)
 {
     const realtime_callbacks_t cb = {.on_end_call = on_end_call, .on_transfer = on_transfer, .on_failed = on_failed};
-    const realtime_config_t cfg = {.api_key = "sk-test", .model = "gpt-realtime-2.1-mini",
+    const realtime_config_t cfg = {.url = "wss://api.openai.com/v1/realtime", .api_key = "sk-test", .model = "gpt-realtime-2.1-mini",
                                    .prompt = "# 역할\n\"OO회사\" AI 직원입니다.\n"};
     CHECK(realtime_init(&cb, &cfg) == ESP_OK);
     CHECK(realtime_start("01012345678", RT_OPEN_GREETING) == ESP_OK);

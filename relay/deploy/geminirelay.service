@@ -1,0 +1,17 @@
+# /etc/systemd/system/geminirelay.service
+[Unit]
+Description=AI CallBridge Gemini relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=geminirelay
+WorkingDirectory=/opt/voiceops/relay
+EnvironmentFile=/etc/geminirelay.env
+ExecStart=/opt/voiceops/relay/.venv/bin/python -m geminirelay --data-dir /var/lib/geminirelay
+StateDirectory=geminirelay
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

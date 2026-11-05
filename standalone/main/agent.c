@@ -508,6 +508,7 @@ void agent_start(const settings_t *settings)
         .on_failed = on_ai_failed,
     };
     const realtime_config_t rt_cfg = {
+        .url = settings->ai_url,
         .api_key = settings->api_key,
         .model = settings->model,
         .prompt = settings->prompt,

@@ -21,7 +21,6 @@
 
 #define TAG "realtime"
 
-#define WS_URI_PREFIX      "wss://api.openai.com/v1/realtime?model="
 #define ULAW_PER_MS        8       /* μ-law 8kHz: 1ms = 8바이트 */
 #define SEND_CHUNK_BYTES   800     /* 상대 음성 100ms 씩 보낸다 (블루투스와 무선을 나눠 쓰니 횟수를 줄인다) */
 #define CALLER_BUF_BYTES   2400    /* 상대 음성 대기열 0.3초 */
@@ -33,12 +32,12 @@
 #define ITEM_ID_MAX        48
 #define WS_SEND_TIMEOUT    pdMS_TO_TICKS(5000)  /* 통화 중 패킷을 잃으면 TCP 재전송에 1~2초가 걸린다 — 그 사이 끊지 않게 */
 
-/* Google Trust Services 루트 (google_roots.pem) — api.openai.com 인증서도 GTS(WE1 → GTS Root R4)가 발급했다 */
-extern const char google_roots_pem[] asm("_binary_google_roots_pem_start");
+/* AI 서버 루트 인증서 (server_roots.pem): api.openai.com 은 GTS, 직접 운영하는 중계 서버는 보통 Let's Encrypt */
+extern const char server_roots_pem[] asm("_binary_server_roots_pem_start");
 
 static realtime_callbacks_t s_cb;
 static realtime_config_t s_cfg;
-static char s_uri[160];
+static char s_uri[200];
 static char s_headers[320];
 static SemaphoreHandle_t s_ws_lock;
 static esp_websocket_client_handle_t s_ws;
@@ -442,7 +441,7 @@ esp_err_t realtime_init(const realtime_callbacks_t *callbacks, const realtime_co
 {
     s_cb = *callbacks;
     s_cfg = *config;
-    snprintf(s_uri, sizeof(s_uri), "%s%s", WS_URI_PREFIX, s_cfg.model);
+    snprintf(s_uri, sizeof(s_uri), "%s?model=%s", s_cfg.url, s_cfg.model);
     snprintf(s_headers, sizeof(s_headers), "Authorization: Bearer %s\r\n", s_cfg.api_key);
     s_ws_lock = xSemaphoreCreateMutex();
     s_caller_audio = xStreamBufferCreate(CALLER_BUF_BYTES, SEND_CHUNK_BYTES);
@@ -487,7 +486,7 @@ esp_err_t realtime_start(const char *caller_number, rt_opening_t opening)
         .buffer_size = 2048,
         .task_stack = 6144,
         .task_prio = 5,
-        .cert_pem = google_roots_pem,
+        .cert_pem = server_roots_pem,  /* ws:// (TLS 없음) 이면 쓰이지 않는다 */
         .disable_auto_reconnect = true,
         .network_timeout_ms = 10000,
         .keep_alive_enable = true,  /* 죽은 연결을 TCP keepalive 로 약 20초 안에 끊는다 (기본 5s/5s/3회) */

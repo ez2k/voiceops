@@ -4,6 +4,7 @@
 
 ```
 단독형   휴대폰 ⇄ 블루투스 HFP ⇄ ESP32-WROOM-32 ⇄ Wi-Fi ⇄ OpenAI Realtime (전화 음질 μ-law 8kHz)
+                                                         └ 또는 ⇄ 중계 서버(relay/) ⇄ Gemini Live
 PC 연결형 휴대폰 ⇄ 블루투스 HFP ⇄ ESP32-WROOM-32 ⇄ USB ⇄ PC 브리지 ⇄ Gemini Live (또는 PC 스피커·마이크)
 ```
 
@@ -44,7 +45,8 @@ ESP-IDF가 설치된 PC라면 직접 구울 수도 있습니다: `cd standalone 
 
 ### 3. 설정
 1. **② 기기 연결** → 같은 포트 선택. 현재 설정과 기본 지시문을 불러옵니다.
-2. Wi-Fi 이름·비밀번호, OpenAI API 키, 모델(`gpt-realtime-2.1-mini` 또는 `gpt-realtime-2.1`), 자동응답까지 벨 횟수(1번 ≈ 3초)를 넣습니다.
+2. Wi-Fi 이름·비밀번호, AI 서버(기본 OpenAI 그대로), OpenAI API 키, 모델(`gpt-realtime-2.1-mini` 또는 `gpt-realtime-2.1`), 자동응답까지 벨 횟수(1번 ≈ 3초)를 넣습니다.
+   - Gemini를 쓰려면 리눅스 서버에 **중계 서버**([relay/README.md](relay/README.md))를 띄우고, AI 서버에 그 주소(`wss://…/v1/realtime`), API 키 칸에 중계 서버 토큰을 넣습니다.
 3. **AI 지시문**에 회사명, 인사말(AI 고지 포함), 영업시간, 자주 묻는 질문, 처리 규칙을 씁니다 (최대 8KB).
 4. **저장하고 재시작**. 로그에 `wifi: connected` 가 보이면 됩니다.
 
@@ -87,7 +89,7 @@ ESP-IDF가 설치된 PC라면 직접 구울 수도 있습니다: `cd standalone 
 | 명령 | 하는 일 |
 |---|---|
 | `cfg show` | 현재 설정 (비밀번호·키는 가림)과 펌웨어 빌드 번호 |
-| `cfg set wifi_ssid <값>` | `wifi_ssid`, `wifi_pass`, `api_key`, `model`, `rings`, `coex`(`balance`·`wifi`·`bt`) |
+| `cfg set wifi_ssid <값>` | `wifi_ssid`, `wifi_pass`, `ai_url`(`wss://`·`ws://`), `api_key`, `model`, `rings`, `coex`(`balance`·`wifi`·`bt`) |
 | `cfg prompt get` / `begin` / `data <base64>` / `end` / `reset` | 지시문 읽기·바꾸기·기본값 복원 |
 | `cfg reboot` | 재시작 (설정 적용) |
 | `pair` | 새 폰 페어링 허용 |
@@ -147,6 +149,7 @@ standalone/              단독형 펌웨어
   host_test/             PC에서 도는 C 테스트
 usb-bridge/              PC 연결형 펌웨어 (USB 프레임 링크)
 bridge/                  PC 브리지 (파이썬: 링크, Gemini endpoint, 녹음)
+relay/                   Gemini 중계 서버 (리눅스: OpenAI Realtime 방식 ⇄ Gemini Live, μ-law 8kHz, 메모·대화록)
 web/                     웹 설치·설정 페이지 (ESP Web Tools + Web Serial)
 .github/workflows/       펌웨어 빌드 + 웹 페이지 배포
 ```
@@ -154,6 +157,7 @@ web/                     웹 설치·설정 페이지 (ESP Web Tools + Web Seria
 ## 테스트
 - `standalone/host_test/run.sh` — base64, μ-law, 메시지 스트리밍 해독, 고정 JSON 유효성, 그리고 `realtime.c` 전체를 가짜 WebSocket 으로 (세션 설정·첫 인사·끼어들기·도구·토큰 집계). cJSON 이 필요합니다 (Ubuntu: `libcjson-dev`)
 - `cd web/test && npm install && npm test` — 웹 설정 페이지를 가짜 기기로 (불러오기·저장·지시문 한글 왕복)
+- `cd relay && python -m pytest` — 중계 서버를 실제 WebSocket 으로 띄워 가짜 기기·가짜 Gemini 로 왕복, μ-law 를 펌웨어 C 구현과 전부 비교
 - `cd bridge && pip install pytest && python -m pytest` — PC 브리지 전체 (C 프레임 코덱 교차 검증, 가짜 Gemini 세션)
 
 두 펌웨어 모두 GitHub Actions(ESP-IDF v6.1)에서 빌드되고, 위 테스트와 AI 서버 인증서 확인(내장 루트로 api.openai.com 체인 검증)도 CI에서 돌아갑니다 (`.github/workflows/checks.yml`). 단독형의 OpenAI 연결은 **실제 통화로는 아직 검증 전**입니다.

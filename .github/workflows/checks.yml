@@ -41,24 +41,29 @@ jobs:
         run: |
           pip install pyserial numpy soxr google-genai pytest
           cd bridge && python -m pytest -q
+      - name: Gemini relay
+        run: |
+          pip install -r relay/requirements.txt
+          cd relay && python -m pytest -q
       - name: Web settings page
         run: |
           cd web/test && npm install --no-audit --no-fund && npm test
 
-  # 펌웨어에 내장한 루트 인증서(google_roots.pem)로 AI 서버의 실제 인증서 체인이 확인되는지.
+  # 펌웨어에 내장한 루트 인증서(server_roots.pem)로 AI 서버의 실제 인증서 체인이 확인되는지.
+  # valid-isrgrootx*.letsencrypt.org 는 Let's Encrypt 의 시험용 사이트 (중계 서버 인증서와 같은 루트).
   # 서버가 인증서 발급처를 바꾸면 여기서 먼저 깨진다 (기기에서는 "No matching trusted root" 로 연결 실패).
   tls-roots:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify api.openai.com and api.x.ai chains against the embedded roots
+      - name: Verify real server chains against the embedded roots
         run: |
           set -e
-          for host in api.openai.com api.x.ai; do
+          for host in api.openai.com api.x.ai valid-isrgrootx1.letsencrypt.org valid-isrgrootx2.letsencrypt.org; do
             openssl s_client -connect "$host:443" -servername "$host" -showcerts </dev/null 2>/dev/null \
               | awk '/BEGIN CERT/{n++} n{print > ("cert" n ".pem")} /END CERT/{}'
             cat cert[2-9].pem > chain.pem 2>/dev/null || true
             echo "== $host: $(openssl x509 -in cert1.pem -noout -issuer)"
-            openssl verify -CAfile standalone/main/google_roots.pem -untrusted chain.pem cert1.pem
+            openssl verify -CAfile standalone/main/server_roots.pem -untrusted chain.pem cert1.pem
             rm -f cert*.pem chain.pem
           done

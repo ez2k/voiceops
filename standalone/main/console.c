@@ -50,6 +50,7 @@ static void show(void)
         reply("value api_key=%s", key_len ? "(saved)" : "");
     }
     reply("value model=%s", s->model);
+    reply("value ai_url=%s", s->ai_url);
     reply("value rings=%d", s->rings);
     reply("value coex=%s", s->coex);
     reply("value prompt=%s %u", s->prompt_custom ? "custom" : "default", (unsigned)strlen(s->prompt));

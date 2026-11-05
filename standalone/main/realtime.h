@@ -24,7 +24,8 @@ typedef struct {
 } realtime_callbacks_t;
 
 typedef struct {
-    const char *api_key;
+    const char *url;      /* "wss://api.openai.com/v1/realtime" 또는 직접 운영하는 중계 서버 (relay/, Gemini) */
+    const char *api_key;  /* Authorization: Bearer 로 보낸다 (OpenAI 키 또는 중계 서버 토큰) */
     const char *model;    /* 예: "gpt-realtime-2.1-mini" */
     const char *prompt;   /* 지시문 (역할, 인사말, 업무 지식, 처리 규칙) */
 } realtime_config_t;      /* 문자열은 프로그램이 끝날 때까지 유효해야 한다 */

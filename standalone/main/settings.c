@@ -6,6 +6,7 @@
 #include "nvs.h"
 
 #define NVS_NAMESPACE   "cb_settings"
+#define DEFAULT_AI_URL  "wss://api.openai.com/v1/realtime"
 #define DEFAULT_MODEL   "gpt-realtime-2.1-mini"
 #define DEFAULT_RINGS   2
 #define DEFAULT_COEX    "balance"
@@ -23,6 +24,7 @@ static void get_str(nvs_handle_t h, const char *key, char *out, size_t size)
 void settings_load(settings_t *s)
 {
     memset(s, 0, sizeof(*s));
+    strlcpy(s->ai_url, DEFAULT_AI_URL, sizeof(s->ai_url));
     strlcpy(s->model, DEFAULT_MODEL, sizeof(s->model));
     s->rings = DEFAULT_RINGS;
     strlcpy(s->coex, DEFAULT_COEX, sizeof(s->coex));
@@ -40,6 +42,11 @@ void settings_load(settings_t *s)
     get_str(h, "model", model, sizeof(model));
     if (model[0]) {
         strlcpy(s->model, model, sizeof(s->model));
+    }
+    char ai_url[sizeof(s->ai_url)];
+    get_str(h, "ai_url", ai_url, sizeof(ai_url));
+    if (ai_url[0]) {
+        strlcpy(s->ai_url, ai_url, sizeof(s->ai_url));
     }
     char coex[sizeof(s->coex)];
     get_str(h, "coex", coex, sizeof(coex));
@@ -104,6 +111,7 @@ esp_err_t settings_set(const char *key, const char *value)
     } STRINGS[] = {
         {"wifi_ssid", sizeof(((settings_t *)0)->wifi_ssid) - 1},
         {"wifi_pass", sizeof(((settings_t *)0)->wifi_pass) - 1},
+        {"ai_url", sizeof(((settings_t *)0)->ai_url) - 1},
         {"api_key", sizeof(((settings_t *)0)->api_key) - 1},
         {"model", sizeof(((settings_t *)0)->model) - 1},
     };
@@ -114,6 +122,9 @@ esp_err_t settings_set(const char *key, const char *value)
             return ESP_ERR_INVALID_ARG;
         }
         return with_nvs(write_rings, &rings);
+    }
+    if (strcmp(key, "ai_url") == 0 && strncmp(value, "wss://", 6) != 0 && strncmp(value, "ws://", 5) != 0) {
+        return ESP_ERR_INVALID_ARG;
     }
     if (strcmp(key, "coex") == 0) {
         if (strcmp(value, "balance") != 0 && strcmp(value, "wifi") != 0 && strcmp(value, "bt") != 0) {
