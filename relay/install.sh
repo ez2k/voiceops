@@ -8,7 +8,8 @@
 #
 # 옵션 (bash -s -- 뒤에):
 #   --domain relay.example.com   이 서버를 가리키는 도메인 (없으면 <공인IP>.sslip.io 를 씀)
-#   --no-tls                     암호화 없이 ws://공인IP:8765 로 연다 (시험용 — 토큰·음성이 그대로 오간다)
+#   --no-tls                     암호화 없이 ws://공인IP:포트 로 연다 (시험용 — 토큰·음성이 그대로 오간다)
+#   --port 8766                  중계 서버 포트 (기본 8765). 키 파일에 적어 두므로 다시 실행할 때는 안 줘도 된다
 #
 # 하는 일: 패키지 설치 → 저장소 받기 → 파이썬 가상환경 → Gemini 키 입력·토큰 생성 → systemd 서비스
 #         → (기본) Caddy 로 Let's Encrypt 인증서와 wss:// → 끝에 기기에 넣을 값을 보여 준다.
@@ -16,7 +17,7 @@
 set -euo pipefail
 
 REPO=https://github.com/ez2k/voiceops.git
-PORT=8765
+PORT=""
 DOMAIN=""
 NO_TLS=0
 RUN_USER=${SUDO_USER:-root}
@@ -36,10 +37,12 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --domain) DOMAIN="${2:-}"; shift 2 ;;
         --no-tls) NO_TLS=1; shift ;;
+        --port) PORT="${2:-}"; shift 2 ;;
         *) die "알 수 없는 옵션: $1" ;;
     esac
 done
 
+[ -z "$PORT" ] || [[ "$PORT" =~ ^[0-9]+$ && "$PORT" -ge 1 && "$PORT" -le 65535 ]] || die "--port 는 1~65535 숫자입니다"
 [ "$(id -u)" -eq 0 ] || die "sudo 로 실행하세요"
 command -v apt-get >/dev/null || die "Debian·Ubuntu 용 스크립트입니다 (다른 배포판은 relay/README.md 의 수동 설치를 따르세요)"
 command -v systemctl >/dev/null || die "systemd 가 필요합니다"
@@ -93,13 +96,23 @@ if [ ! -f "$ENV_FILE" ]; then
 else
     echo "이미 있습니다 — 그대로 씁니다."
 fi
-chown "$RUN_USER" "$ENV_FILE"
-chmod 600 "$ENV_FILE"
 TOKEN=$(sed -n 's/^RELAY_TOKEN=//p' "$ENV_FILE")
+[ -n "$PORT" ] || PORT=$(sed -n 's/^RELAY_PORT=//p' "$ENV_FILE")   # --port 가 없으면 지난번 포트
+PORT=${PORT:-8765}
 
 say "서비스 (geminirelay)"
 HOST=127.0.0.1                       # 앞의 Caddy 만 받는다
 [ "$NO_TLS" -eq 1 ] && HOST=0.0.0.0   # 암호화 없이 밖에서 바로 받는다
+# 포트를 다른 프로그램이 쓰고 있으면 서비스가 끝없이 재시작만 한다: 우리 서비스를 멈춘 뒤에도 쓰이는지 미리 본다
+systemctl stop geminirelay 2>/dev/null || true
+if ss -ltnH "sport = :$PORT" | grep -q .; then
+    ss -ltnpH "sport = :$PORT"
+    die "포트 $PORT 를 위 프로그램이 쓰고 있습니다. 그 프로그램을 끄거나, 다른 포트로: … | sudo bash -s -- --port 8766 (원래 주던 옵션도 함께)"
+fi
+sed -i '/^RELAY_PORT=/d' "$ENV_FILE"   # 포트는 키 파일에 적어 둔다: 서비스가 읽고, 다음 실행도 같은 값을 쓴다
+echo "RELAY_PORT=$PORT" >> "$ENV_FILE"
+chown "$RUN_USER" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 sed -e "s|@DIR@|$DIR|g" -e "s|@USER@|$RUN_USER|g" -e "s|@HOST@|$HOST|g" \
     "$DIR/relay/deploy/geminirelay.service" > /etc/systemd/system/geminirelay.service
 systemctl daemon-reload
@@ -156,11 +169,11 @@ EOT
         fi
         # 이미 쓰던 Caddy 설정(다른 사이트)은 건드리지 않는다: 처음 설치했거나, 기본 설정이거나, 지난번에 우리가 쓴 것만 바꾼다
         if [ "$caddy_existed" -eq 1 ] && [ -f /etc/caddy/Caddyfile ] \
-            && ! grep -q "/usr/share/caddy" /etc/caddy/Caddyfile && ! grep -q "127.0.0.1:$PORT" /etc/caddy/Caddyfile; then
+            && ! grep -q "/usr/share/caddy" /etc/caddy/Caddyfile && ! grep -q "기기(ESP32)" /etc/caddy/Caddyfile; then
             echo "이미 쓰던 Caddy 설정이 있어 바꾸지 않습니다. /etc/caddy/Caddyfile 에 아래를 추가하고 'sudo systemctl reload caddy':"
             printf '\n%s {\n\treverse_proxy 127.0.0.1:%s\n}\n\n' "$DOMAIN" "$PORT"
         else
-            sed "s/relay.example.com/$DOMAIN/" "$DIR/relay/deploy/Caddyfile" > /etc/caddy/Caddyfile
+            sed -e "s/relay.example.com/$DOMAIN/" -e "s/127.0.0.1:8765/127.0.0.1:$PORT/" "$DIR/relay/deploy/Caddyfile" > /etc/caddy/Caddyfile
         fi
         command -v ufw >/dev/null && ufw status | grep -q "Status: active" && ufw allow 80,443/tcp >/dev/null
         systemctl enable -q caddy

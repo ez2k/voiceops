@@ -1,4 +1,4 @@
-"""python -m geminirelay — 환경변수: GEMINI_API_KEY (필수), RELAY_TOKEN (필수)"""
+"""python -m geminirelay — 환경변수: GEMINI_API_KEY (필수), RELAY_TOKEN (필수), RELAY_PORT·GEMINI_MODEL (선택)"""
 
 import argparse
 import asyncio
@@ -15,7 +15,8 @@ from .server import PATH, make_server
 def main() -> None:
     p = argparse.ArgumentParser(description="ESP32 단독형 펌웨어 ⇄ Gemini Live 중계 서버")
     p.add_argument("--host", default="127.0.0.1", help="듣는 주소 (기본: 이 서버 안에서만 — 앞에 Caddy 같은 TLS 프록시를 둔다)")
-    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--port", type=int, default=int(os.environ.get("RELAY_PORT", "8765")),
+                   help="듣는 포트 (기본: RELAY_PORT 환경변수, 없으면 8765)")
     p.add_argument("--model", default=os.environ.get("GEMINI_MODEL", "gemini-3.8-live"), help="Gemini Live 모델")
     p.add_argument("--data-dir", type=Path, default=Path(os.environ.get("RELAY_DATA_DIR", "calls")),
                    help="접수 메모(notes.jsonl), 대화록, 통화 녹음(WAV)을 남길 곳")

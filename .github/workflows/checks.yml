@@ -83,4 +83,14 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/v1/realtime)" = 401
           # 다시 실행해도 된다 (업데이트)
           sudo bash relay/install.sh --no-tls
+          # 포트가 이미 쓰이면 끝없이 재시작하지 않고 멈춘다
+          python3 -m http.server 8799 --bind 127.0.0.1 & busy=$!
+          sleep 1
+          if sudo bash relay/install.sh --no-tls --port 8799; then echo "포트가 쓰이는데 설치가 끝났다"; exit 1; fi
+          kill $busy
+          # 포트 바꾸기: 키 파일에 남아 다음 실행에도 그대로
+          sudo bash relay/install.sh --no-tls --port 8766
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8766/v1/realtime)" = 401
+          sudo bash relay/install.sh --no-tls
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8766/v1/realtime)" = 401
           sudo journalctl -u geminirelay -n 5 --no-pager

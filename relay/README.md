@@ -33,7 +33,8 @@ curl -fsSL https://raw.githubusercontent.com/ez2k/voiceops/main/relay/install.sh
 - 암호화는 Caddy 의 Let's Encrypt 인증서로 합니다 (`wss://`). 도메인이 있으면 `… | sudo bash -s -- --domain relay.example.com`, 없으면 `<공인IP>.sslip.io` (IP 를 이름으로 바꿔 주는 무료 DNS)를 씁니다.
 - 80·443 을 이미 다른 웹 서버(nginx 등)가 쓰고 있으면 Caddy 를 설치하지 않고, 그 서버에 넣을 설정을 보여 줍니다. 이미 쓰던 Caddy 설정도 바꾸지 않습니다.
 - 클라우드 서버라면 보안 그룹(방화벽)에서 80·443 을 열어 두세요.
-- 같은 디렉토리에서 다시 실행하면 코드만 새로 받고 서비스를 다시 띄웁니다 (키·토큰은 그대로).
+- 같은 디렉토리에서 다시 실행하면 코드만 새로 받고 서비스를 다시 띄웁니다 (키·토큰·포트는 그대로).
+- 포트(기본 8765)를 다른 프로그램이 쓰고 있으면 설치가 멈추고 그 프로그램을 보여 줍니다. 다른 포트로: `… | sudo bash -s -- --port 8766` (`--no-tls` 등 원래 옵션도 함께). 포트는 키 파일(`RELAY_PORT=`)에 남습니다.
 
 ## 손으로 설치 (다른 배포판, Python 3.10 이상)
 
@@ -56,7 +57,7 @@ journalctl -u geminirelay -f      # 연결·대화·도구 로그
 2. Caddy를 설치하고 `deploy/Caddyfile`을 `/etc/caddy/Caddyfile`로 복사한 뒤 도메인을 바꿉니다 → `sudo systemctl reload caddy`
    - 기기에 넣은 루트 인증서가 Let's Encrypt(ISRG)라서 `cert_issuer acme` 줄을 지워서는 안 됩니다.
 
-도메인 없이 시험만 할 때는 `--host 0.0.0.0` 으로 띄우고 `ws://서버IP:8765/v1/realtime` 을 씁니다. **토큰과 통화 음성이 암호화되지 않으니** 시험용으로만 쓰세요.
+도메인 없이 시험만 할 때는 `--host 0.0.0.0` 으로 띄우고 `ws://서버IP:8765/v1/realtime` 을 씁니다 (포트는 `--port` 또는 키 파일의 `RELAY_PORT=`). **토큰과 통화 음성이 암호화되지 않으니** 시험용으로만 쓰세요.
 
 ## 기기 설정 (웹 설정 페이지 ②)
 
