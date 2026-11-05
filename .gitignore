@@ -10,3 +10,5 @@ __pycache__/
 .pytest_cache/
 relay/.venv/
 relay/calls/
+relay/geminirelay.env
+.python/

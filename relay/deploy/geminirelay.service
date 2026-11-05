@@ -1,15 +1,15 @@
-# /etc/systemd/system/geminirelay.service
+# /etc/systemd/system/geminirelay.service — install.sh 가 @DIR@(voiceops 저장소), @USER@, @HOST@ 를 채워 만든다.
+# 손으로 만들 때: sed -e "s|@DIR@|$PWD|g" -e "s|@USER@|$USER|g" -e "s|@HOST@|127.0.0.1|g" relay/deploy/geminirelay.service
 [Unit]
 Description=AI CallBridge Gemini relay
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=geminirelay
-WorkingDirectory=/opt/voiceops/relay
-EnvironmentFile=/etc/geminirelay.env
-ExecStart=/opt/voiceops/relay/.venv/bin/python -m geminirelay --data-dir /var/lib/geminirelay
-StateDirectory=geminirelay
+User=@USER@
+WorkingDirectory=@DIR@/relay
+EnvironmentFile=@DIR@/relay/geminirelay.env
+ExecStart=@DIR@/relay/.venv/bin/python -m geminirelay --host @HOST@ --data-dir @DIR@/relay/calls
 Restart=always
 RestartSec=3
 

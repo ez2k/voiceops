@@ -1,26 +1,36 @@
 #!/usr/bin/env bash
 # AI CallBridge — Gemini 중계 서버 한 번에 설치 (Debian·Ubuntu)
 #
-#   curl -fsSL https://raw.githubusercontent.com/ez2k/voiceops/main/relay/install.sh | sudo bash
+#   설치할 디렉토리로 가서:  curl -fsSL https://raw.githubusercontent.com/ez2k/voiceops/main/relay/install.sh | sudo bash
+#
+# 지금 디렉토리 아래 voiceops/ 에 설치한다 (이미 voiceops 저장소 안이면 그 저장소를 쓴다).
+# 서비스는 sudo 를 실행한 사용자 권한으로 돈다. 키·토큰·접수 메모·대화록도 모두 그 안(relay/)에 둔다.
 #
 # 옵션 (bash -s -- 뒤에):
 #   --domain relay.example.com   이 서버를 가리키는 도메인 (없으면 <공인IP>.sslip.io 를 씀)
 #   --no-tls                     암호화 없이 ws://공인IP:8765 로 연다 (시험용 — 토큰·음성이 그대로 오간다)
 #
-# 하는 일: 패키지 설치 → 저장소 받기(/opt/voiceops) → 파이썬 가상환경 → Gemini 키 입력·토큰 생성(/etc/geminirelay.env)
-#         → systemd 서비스 → (기본) Caddy 로 Let's Encrypt 인증서와 wss:// → 끝에 기기에 넣을 값을 보여 준다.
+# 하는 일: 패키지 설치 → 저장소 받기 → 파이썬 가상환경 → Gemini 키 입력·토큰 생성 → systemd 서비스
+#         → (기본) Caddy 로 Let's Encrypt 인증서와 wss:// → 끝에 기기에 넣을 값을 보여 준다.
 # 다시 실행하면 코드만 새로 받고 서비스를 다시 띄운다 (키·토큰은 그대로).
 set -euo pipefail
 
-REPO=${VOICEOPS_REPO:-https://github.com/ez2k/voiceops.git}   # CI 는 받은 코드로 시험한다
-DIR=/opt/voiceops
-ENV_FILE=/etc/geminirelay.env
+REPO=https://github.com/ez2k/voiceops.git
 PORT=8765
 DOMAIN=""
 NO_TLS=0
+RUN_USER=${SUDO_USER:-root}
+if [ -f "$PWD/relay/geminirelay/__init__.py" ]; then
+    DIR=$PWD            # 이미 voiceops 저장소 안에서 실행했다
+else
+    DIR=$PWD/voiceops
+fi
+ENV_FILE=$DIR/relay/geminirelay.env
+DATA_DIR=$DIR/relay/calls
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die()  { printf '\n\033[31m설치 중단: %s\033[0m\n' "$*" >&2; exit 1; }
+as_user() { if [ "$RUN_USER" = root ]; then "$@"; else sudo -u "$RUN_USER" -H "$@"; fi; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -52,17 +62,21 @@ if ! command -v uv >/dev/null; then
     rm -rf "$tmp"
 fi
 
-say "코드 받기 ($DIR)"
-id geminirelay >/dev/null 2>&1 || useradd --system --home-dir "$DIR" --shell /usr/sbin/nologin geminirelay
+say "코드 받기 ($DIR, 사용자 $RUN_USER)"
 if [ -d "$DIR/.git" ]; then
-    git -C "$DIR" pull -q --ff-only
+    if as_user git -C "$DIR" symbolic-ref -q HEAD >/dev/null; then
+        as_user git -C "$DIR" pull -q --ff-only
+    else
+        echo "브랜치가 아닌 상태라 새 코드 받기는 건너뜁니다."
+    fi
 else
-    git clone -q --depth 1 "$REPO" "$DIR"
+    as_user git clone -q --depth 1 "$REPO" "$DIR" || die "$PWD 에 쓸 수 없습니다 — $RUN_USER 가 쓸 수 있는 디렉토리에서 실행하세요"
 fi
-export UV_PYTHON_INSTALL_DIR="$DIR/.python"   # 받은 파이썬을 서비스 사용자도 읽을 수 있는 곳에
+uv_env=(UV_PYTHON_INSTALL_DIR="$DIR/.python")   # 받은 파이썬도 이 디렉토리 안에
+[ -n "${UV_PYTHON_PREFERENCE:-}" ] && uv_env+=(UV_PYTHON_PREFERENCE="$UV_PYTHON_PREFERENCE")
 rm -rf "$DIR/relay/.venv"
-uv venv -q --python ">=3.10" "$DIR/relay/.venv"
-uv pip install -q --python "$DIR/relay/.venv/bin/python" -r "$DIR/relay/requirements.txt"
+as_user env "${uv_env[@]}" uv venv -q --python ">=3.10" "$DIR/relay/.venv"
+as_user env "${uv_env[@]}" uv pip install -q --python "$DIR/relay/.venv/bin/python" -r "$DIR/relay/requirements.txt"
 echo "파이썬: $("$DIR/relay/.venv/bin/python" -V)"
 
 say "Gemini 키와 기기 토큰 ($ENV_FILE)"
@@ -79,19 +93,15 @@ if [ ! -f "$ENV_FILE" ]; then
 else
     echo "이미 있습니다 — 그대로 씁니다."
 fi
+chown "$RUN_USER" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 TOKEN=$(sed -n 's/^RELAY_TOKEN=//p' "$ENV_FILE")
 
 say "서비스 (geminirelay)"
-install -m 644 "$DIR/relay/deploy/geminirelay.service" /etc/systemd/system/geminirelay.service
-mkdir -p /etc/systemd/system/geminirelay.service.d
-if [ "$NO_TLS" -eq 1 ]; then
-    # 암호화 없이 밖에서 바로 받는다
-    printf '[Service]\nExecStart=\nExecStart=%s/relay/.venv/bin/python -m geminirelay --host 0.0.0.0 --port %s --data-dir /var/lib/geminirelay\n' \
-        "$DIR" "$PORT" > /etc/systemd/system/geminirelay.service.d/listen.conf
-else
-    rm -f /etc/systemd/system/geminirelay.service.d/listen.conf
-fi
+HOST=127.0.0.1                       # 앞의 Caddy 만 받는다
+[ "$NO_TLS" -eq 1 ] && HOST=0.0.0.0   # 암호화 없이 밖에서 바로 받는다
+sed -e "s|@DIR@|$DIR|g" -e "s|@USER@|$RUN_USER|g" -e "s|@HOST@|$HOST|g" \
+    "$DIR/relay/deploy/geminirelay.service" > /etc/systemd/system/geminirelay.service
 systemctl daemon-reload
 systemctl enable -q geminirelay
 systemctl restart geminirelay
@@ -179,6 +189,7 @@ cat <<EOT
   모델    : 그대로 두어도 됩니다 (서버가 Gemini 모델로 바꿔 씁니다)
 
   로그     : journalctl -u geminirelay -f
-  메모·대화록: /var/lib/geminirelay
+  메모·대화록: $DATA_DIR
+  키·토큰  : $ENV_FILE
   업데이트 : 이 명령을 다시 실행
 EOT
