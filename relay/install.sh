@@ -37,8 +37,20 @@ command -v systemctl >/dev/null || die "systemd 가 필요합니다"
 say "패키지 설치"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq git python3 python3-venv curl openssl ca-certificates >/dev/null
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' || die "Python 3.10 이상이 필요합니다 ($(python3 -V))"
+apt-get install -y -qq git curl openssl ca-certificates >/dev/null
+
+# 파이썬은 uv 로 준비한다: 시스템 파이썬이 3.10 이상이면 그것을, 아니면(예: Ubuntu 20.04 의 3.8) 독립 실행형 파이썬을 받는다
+if ! command -v uv >/dev/null; then
+    case "$(uname -m)" in
+        x86_64) UV_ARCH=x86_64 ;;
+        aarch64|arm64) UV_ARCH=aarch64 ;;
+        *) die "지원하지 않는 CPU: $(uname -m)" ;;
+    esac
+    tmp=$(mktemp -d)
+    curl -fsSL "https://github.com/astral-sh/uv/releases/latest/download/uv-$UV_ARCH-unknown-linux-gnu.tar.gz" | tar -xz -C "$tmp"
+    install -m 755 "$tmp/uv-$UV_ARCH-unknown-linux-gnu/uv" /usr/local/bin/uv
+    rm -rf "$tmp"
+fi
 
 say "코드 받기 ($DIR)"
 id geminirelay >/dev/null 2>&1 || useradd --system --home-dir "$DIR" --shell /usr/sbin/nologin geminirelay
@@ -47,9 +59,11 @@ if [ -d "$DIR/.git" ]; then
 else
     git clone -q --depth 1 "$REPO" "$DIR"
 fi
-python3 -m venv "$DIR/relay/.venv"
-"$DIR/relay/.venv/bin/pip" install -q --upgrade pip
-"$DIR/relay/.venv/bin/pip" install -q -r "$DIR/relay/requirements.txt"
+export UV_PYTHON_INSTALL_DIR="$DIR/.python"   # 받은 파이썬을 서비스 사용자도 읽을 수 있는 곳에
+rm -rf "$DIR/relay/.venv"
+uv venv -q --python ">=3.10" "$DIR/relay/.venv"
+uv pip install -q --python "$DIR/relay/.venv/bin/python" -r "$DIR/relay/requirements.txt"
+echo "파이썬: $("$DIR/relay/.venv/bin/python" -V)"
 
 say "Gemini 키와 기기 토큰 ($ENV_FILE)"
 if [ ! -f "$ENV_FILE" ]; then

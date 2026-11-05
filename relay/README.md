@@ -24,6 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/ez2k/voiceops/main/relay/install.sh
 ```
 
 - 패키지 설치 → 코드(`/opt/voiceops`) → 파이썬 가상환경 → 키·토큰(`/etc/geminirelay.env`) → systemd 서비스 → Caddy 로 Let's Encrypt 인증서(`wss://`)
+- 파이썬은 [uv](https://github.com/astral-sh/uv) 로 준비합니다. 시스템 파이썬이 3.10 보다 오래됐으면(예: Ubuntu 20.04 의 3.8) 독립 실행형 파이썬을 받아 `/opt/voiceops/.python` 에 둡니다.
 - 도메인이 있으면 `… | sudo bash -s -- --domain relay.example.com`. 없으면 `<공인IP>.sslip.io` 를 씁니다 (IP 를 이름으로 바꿔 주는 무료 DNS).
 - 80·443 을 이미 다른 웹 서버(nginx 등)가 쓰고 있으면 Caddy 를 설치하지 않고, 그 서버에 넣을 설정을 보여 줍니다. 이미 쓰던 Caddy 설정도 바꾸지 않습니다.
 - 클라우드 서버라면 보안 그룹(방화벽)에서 80·443 을 열어 두세요.

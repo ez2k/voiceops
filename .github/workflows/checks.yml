@@ -76,7 +76,8 @@ jobs:
       - name: Run the installer and probe the service
         run: |
           printf 'GEMINI_API_KEY=dummy\nRELAY_TOKEN=%s\n' "$(openssl rand -hex 24)" | sudo tee /etc/geminirelay.env >/dev/null
-          sudo VOICEOPS_REPO="$GITHUB_WORKSPACE" bash relay/install.sh --no-tls
+          # 시스템 파이썬이 오래된 서버(Ubuntu 20.04 = 3.8)처럼, uv 가 받은 독립 실행형 파이썬으로 시험한다
+          sudo UV_PYTHON_PREFERENCE=only-managed VOICEOPS_REPO="$GITHUB_WORKSPACE" bash relay/install.sh --no-tls
           systemctl is-active geminirelay
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/v1/realtime)" = 401
           # 다시 실행해도 된다 (업데이트)
