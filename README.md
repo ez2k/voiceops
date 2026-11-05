@@ -74,6 +74,7 @@ ESP-IDF가 설치된 PC라면 직접 구울 수도 있습니다: `cd standalone 
 | 이 폰으로 직접 전화 걸기 | `폰에서 거는 전화 — 소리는 폰 본체로` — AI 는 끼지 않고 평소처럼 폰으로 통화 |
 | 통화 끝 | `session closed — 토큰: 입력 음성 …·글 … (그중 캐시 …), 출력 음성 …·글 …` (요금 확인용) |
 | 통화 중 5초마다 | `call stats: heap free=… min=… big=… \| ai rx=…KB/s buffered=…ms prebuf=…ms underruns=… send_fails=…` |
+| (같은 때) 블루투스 구간 | `sco stats: sco=16000B/s frames=… bad=0 gap_max=…ms txfail=0` — 폰에서 오는 음성이 1초 16000바이트보다 적거나 `bad`·`gap_max`가 크면 블루투스에서 소리가 빠진다 (받는 프레임에 맞춰 보내므로 보내는 쪽도 함께 빈다) |
 
 ### 단독형에서 확인할 점 (실험의 핵심)
 - **메모리**: PSRAM이 없는 칩에 블루투스·Wi-Fi·TLS를 함께 올립니다. 로그의 `min=` 값이 수 KB 이하로 떨어지거나, `big=`(가장 큰 빈 블록)이 17KB 아래로 내려가 TLS가 서버 레코드를 못 받거나, 재부팅이 반복되면 메모리 부족입니다 → 2칩(ESP32 + ESP32-S3) 구성으로 넘어가는 신호입니다.

@@ -36,6 +36,8 @@ static volatile bool s_audio_active;
 static uint16_t s_frame_size;
 static esp_timer_handle_t s_reconnect_timer;
 static const uint8_t s_silence[MAX_SCO_FRAME];
+static phone_audio_stats_t s_astats;   /* 블루투스 태스크가 쓰고 앱이 읽는다 (통계라 찢어진 읽기는 괜찮다) */
+static int64_t s_last_rx_us;
 
 static void bda_to_str(const uint8_t *bda, char *out, size_t size)
 {
@@ -134,9 +136,23 @@ static void on_sco_data(esp_hf_sync_conn_hdl_t hdl, esp_hf_audio_buff_t *buf, bo
     bool good = (buf != NULL) && !is_bad && buf->data_len > 0;
     uint16_t n = s_frame_size;
 
+    int64_t now = esp_timer_get_time();
+    if (s_last_rx_us != 0) {
+        uint32_t gap_ms = (uint32_t)((now - s_last_rx_us) / 1000);
+        if (gap_ms > s_astats.max_gap_ms) {
+            s_astats.max_gap_ms = gap_ms;
+        }
+    }
+    s_last_rx_us = now;
+    s_astats.rx_frames++;
+    if (!good) {
+        s_astats.rx_bad++;
+    }
+
     if (good) {
         n = buf->data_len;
         s_frame_size = n;
+        s_astats.rx_bytes += n;
         s_cb.on_rx_audio(buf->data, n);
     }
     if (buf != NULL) {
@@ -155,6 +171,7 @@ static void on_sco_data(esp_hf_sync_conn_hdl_t hdl, esp_hf_audio_buff_t *buf, bo
 
     esp_hf_audio_buff_t *out = esp_hf_client_audio_buff_alloc(n);
     if (out == NULL) {
+        s_astats.tx_fail++;
         return;
     }
     size_t got = s_cb.fill_tx_audio(out->data, n);
@@ -163,6 +180,7 @@ static void on_sco_data(esp_hf_sync_conn_hdl_t hdl, esp_hf_audio_buff_t *buf, bo
     }
     out->data_len = n;
     if (esp_hf_client_audio_data_send(hdl, out) != ESP_OK) {
+        s_astats.tx_fail++;
         esp_hf_client_audio_buff_free(out);
     }
 }
@@ -193,6 +211,9 @@ static void hf_cb(esp_hf_client_cb_event_t event, esp_hf_client_cb_param_t *para
         switch (param->audio_stat.state) {
         case ESP_HF_CLIENT_AUDIO_STATE_CONNECTED:
             s_frame_size = param->audio_stat.preferred_frame_size;
+            memset(&s_astats, 0, sizeof(s_astats));
+            s_last_rx_us = 0;
+            ESP_LOGI(TAG, "통화 음성 연결 (CVSD 8kHz, 프레임 %u 바이트)", (unsigned)s_frame_size);
             esp_hf_client_register_audio_data_callback(on_sco_data);
             emit(PHONE_EVT_AUDIO_ON, CVSD_SAMPLE_RATE, s_frame_size, NULL, NULL);
             s_audio_active = true;
@@ -363,4 +384,12 @@ void phone_start(const phone_callbacks_t *callbacks, const char *device_name)
     char mac[18];
     bda_to_str(esp_bt_dev_get_address(), mac, sizeof(mac));
     emit(PHONE_EVT_READY, 0, 0, mac, NULL);
+}
+
+void phone_get_audio_stats(phone_audio_stats_t *stats, bool reset)
+{
+    *stats = s_astats;
+    if (reset) {
+        memset(&s_astats, 0, sizeof(s_astats));
+    }
 }

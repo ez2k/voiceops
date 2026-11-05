@@ -71,4 +71,16 @@ esp_err_t phone_audio_connect(void);         /* 소리를 다시 이 기기로 *
 esp_err_t phone_audio_disconnect(void);      /* 통화는 유지하고 소리만 폰 본체로 (사람에게 인계) */
 void phone_pair(void);                       /* 새 폰 페어링 허용 */
 void phone_get_status(phone_status_t *status);
+
+/* 통화 음성(SCO) 링크 상태 — 블루투스 구간에서 소리가 빠지는지 본다 */
+typedef struct {
+    uint32_t rx_frames;   /* 폰에서 온 음성 프레임 */
+    uint32_t rx_bad;      /* 깨진 프레임 (블루투스에서 손상·손실) */
+    uint32_t rx_bytes;    /* 폰에서 온 음성 바이트 — 정상이면 1초에 16000 (8kHz 16bit) */
+    uint32_t tx_fail;     /* 폰으로 보내지 못한 프레임 */
+    uint32_t max_gap_ms;  /* 수신 프레임 사이 가장 긴 간격 (정상은 수 ms). 받는 프레임에 맞춰 보내므로 보내는 쪽도 그만큼 빈다 */
+} phone_audio_stats_t;
+
+/* reset 이면 읽은 뒤 0 으로 (구간별로 보려고) */
+void phone_get_audio_stats(phone_audio_stats_t *stats, bool reset);
 const char *phone_conn_state_name(int state);
