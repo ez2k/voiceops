@@ -1,0 +1,22 @@
+name: tls-probe
+on:
+  push:
+    branches: [tls-probe]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show certificate chains
+        run: |
+          for host in api.openai.com api.x.ai; do
+            echo "=== $host"
+            openssl s_client -connect $host:443 -servername $host -showcerts </dev/null 2>/dev/null > chain.txt || true
+            csplit -s -z -f c- chain.txt '/-----BEGIN CERTIFICATE-----/' '{*}' || true
+            for f in c-*; do
+              grep -q 'BEGIN CERT' $f || continue
+              sed -n '/BEGIN CERT/,/END CERT/p' $f > $f.pem
+              openssl x509 -in $f.pem -noout -subject -issuer -enddate
+              echo ---
+            done
+            rm -f c-*
+          done
