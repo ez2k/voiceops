@@ -53,3 +53,9 @@ bool wifi_connected(void)
 {
     return s_connected;
 }
+
+int wifi_rssi(void)
+{
+    wifi_ap_record_t ap;
+    return esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
+}

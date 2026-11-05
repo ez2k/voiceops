@@ -450,11 +450,11 @@ static void log_call_stats(void)
     /* big = 가장 큰 연속 빈 블록 (TLS 가 서버 레코드 하나(최대 16KB)를 통째로 받을 자리) */
     phone_audio_stats_t sco;
     phone_get_audio_stats(&sco, true);
-    ESP_LOGI(TAG, "call stats: heap free=%u min=%u big=%u | ai rx=%uKB/s buffered=%ums prebuf=%ums underruns=%u send_fails=%u",
+    ESP_LOGI(TAG, "call stats: heap free=%u min=%u big=%u | ai rx=%uKB/s buffered=%ums prebuf=%ums underruns=%u send_fails=%u wifi=%ddBm",
              (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
              (unsigned)(ms ? rx / ms : 0), (unsigned)st.ai_buffered_ms, (unsigned)st.prebuffer_ms,
-             (unsigned)st.underruns, (unsigned)st.send_fails);
+             (unsigned)st.underruns, (unsigned)st.send_fails, wifi_rssi());
     /* 블루투스 구간: 정상이면 sco=16000B/s, bad=0, gap 은 수 ms, txfail=0 */
     ESP_LOGI(TAG, "sco stats: sco=%uB/s frames=%u bad=%u gap_max=%ums txfail=%u",
              (unsigned)(ms ? (uint64_t)sco.rx_bytes * 1000 / ms : 0), (unsigned)sco.rx_frames, (unsigned)sco.rx_bad,

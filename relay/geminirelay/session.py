@@ -14,10 +14,16 @@ Gemini 가 보내는 것                         →  기기로
   interrupted (상대가 끼어듦)                 →  input_audio_buffer.speech_started + response.done (cancelled)
   turn_complete                               →  response.output_audio.done + response.done (토큰 사용량)
   tool_call                                   →  response.done 의 function_call 항목
+
+기기로 가는 메시지는 모두 한 줄(_out)로 세워 순서대로 보낸다. AI 음성은 Gemini 가 실시간보다 훨씬 빨리
+만들지만, 실시간 속도로(AUDIO_LEAD_S 만큼만 앞서) 나눠 보낸다. 한꺼번에 쏟으면 통화 중 블루투스와 나눠 쓰느라
+좁아진 기기 Wi-Fi 에 몰려 TCP 가 수 초씩 멈춘다. ESP32 음성 비서 서버(xiaozhi-esp32-server)의 흐름 제어와
+같은 방식이다: 처음 조금은 바로, 나머지는 재생 시각에 맞춰.
 """
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import wave
@@ -36,6 +42,7 @@ log = logging.getLogger("geminirelay")
 CALL_RATE = 8000        # 통화 음성 (μ-law 8kHz)
 GEMINI_OUT_RATE = 24000  # Gemini 음성 출력은 항상 24kHz
 DELTA_BYTES = 800        # AI 음성을 0.1초씩 묶어 보낸다 (메시지마다 붙는 JSON 머리말과 ESP32 처리 횟수를 줄인다)
+AUDIO_LEAD_S = 1.0       # 기기가 내보내는 것보다 최대 이만큼만 앞서 보낸다 (기기 대기열 2초보다 작게)
 
 
 class DeviceSession:
@@ -66,9 +73,11 @@ class DeviceSession:
         self._started = datetime.now()
         self._record = record
         self._wav: dict[str, wave.Wave_write] = {}  # 통화 녹음: caller(기기에서 온 소리), ai(기기로 보낸 소리)
+        self._out: asyncio.Queue = asyncio.Queue()  # 기기로 보낼 (메시지, μ-law 음성 또는 None), 끝은 None
+        self._cancelled: set[str] = set()           # 상대가 끼어들어 취소된 대답: 아직 안 보낸 음성은 버린다
 
-    async def _send(self, msg: dict) -> None:
-        await self._send_json(msg)
+    async def _send(self, msg: dict, audio: bytes | None = None) -> None:
+        self._out.put_nowait((msg, audio))
 
     def _next_id(self, prefix: str) -> str:
         self._n += 1
@@ -77,6 +86,19 @@ class DeviceSession:
     # ---- 전체 흐름 ----
 
     async def run(self) -> None:
+        sender = asyncio.create_task(self._to_device())
+        try:
+            await self._serve()
+        finally:
+            self._out.put_nowait(None)  # 남은 것을 마저 보내고 멈춘다
+            with contextlib.suppress(Exception):  # 기기가 이미 끊었으면 보낼 곳이 없다
+                await sender
+            for w in self._wav.values():
+                w.close()
+            self._save_transcript()
+            log.info("%s 세션 끝", self._peer)
+
+    async def _serve(self) -> None:
         await self._send({"type": "session.created", "session": {"model": self._model}})
         first = await self._next_message()
         if first is None:
@@ -100,11 +122,6 @@ class DeviceSession:
         except Exception as e:  # Gemini 연결 실패·끊김 → 기기는 사람에게 넘긴다
             log.warning("%s Gemini 오류: %r", self._peer, e)
             await self._error(f"Gemini: {e}")
-        finally:
-            for w in self._wav.values():
-                w.close()
-            self._save_transcript()
-            log.info("%s 세션 끝", self._peer)
 
     async def _next_message(self) -> dict | None:
         try:
@@ -113,10 +130,27 @@ class DeviceSession:
             return None
 
     async def _error(self, message: str) -> None:
-        try:
-            await self._send({"type": "error", "error": {"type": "server_error", "code": "upstream_error", "message": message}})
-        except Exception:
-            pass
+        await self._send({"type": "error", "error": {"type": "server_error", "code": "upstream_error", "message": message}})
+
+    async def _to_device(self) -> None:
+        """기기로 보내는 유일한 곳. AI 음성은 기기가 내보낼 시각보다 AUDIO_LEAD_S 이상 앞서지 않게 기다렸다 보낸다."""
+        loop = asyncio.get_running_loop()
+        play_end = loop.time()  # 지금까지 보낸 AI 음성을 기기가 다 내보내는 시각 (추정)
+        while (item := await self._out.get()) is not None:
+            msg, audio = item
+            if audio is not None:
+                if msg["response_id"] in self._cancelled:
+                    continue
+                wait = play_end - AUDIO_LEAD_S - loop.time()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    if msg["response_id"] in self._cancelled:
+                        continue
+                play_end = max(play_end, loop.time()) + len(audio) / CALL_RATE
+                self._write_wav("ai", ulaw.decode(audio))  # 기기가 받는 그대로 (μ-law 를 다시 푼 소리)
+            elif msg["type"] == "input_audio_buffer.speech_started":
+                play_end = loop.time()  # 기기는 남은 AI 음성을 버린다
+            await self._send_json(msg)
 
     def _live_config(self, session: dict) -> types.LiveConnectConfig:
         declarations = [
@@ -205,10 +239,9 @@ class DeviceSession:
             chunk = bytes(resp["buf"][:DELTA_BYTES])
             del resp["buf"][:DELTA_BYTES]
             resp["audio"] = True
-            self._write_wav("ai", ulaw.decode(chunk))  # 기기가 받는 그대로 (μ-law 를 다시 푼 소리)
             await self._send({"type": "response.output_audio.delta", "response_id": resp["id"],
                               "item_id": resp["item_id"], "output_index": 0, "content_index": 0,
-                              "delta": base64.b64encode(chunk).decode()})
+                              "delta": base64.b64encode(chunk).decode()}, audio=chunk)
 
     async def _handle(self, msg: types.LiveServerMessage) -> None:
         if msg.data:
@@ -225,6 +258,8 @@ class DeviceSession:
             if sc.output_transcription and sc.output_transcription.text:
                 (await self._begin_response())["said"] += sc.output_transcription.text
             if sc.interrupted:
+                if self._response is not None:
+                    self._cancelled.add(self._response["id"])
                 await self._send({"type": "input_audio_buffer.speech_started",
                                   "item_id": self._response["item_id"] if self._response else ""})
                 await self._finish_response("cancelled")

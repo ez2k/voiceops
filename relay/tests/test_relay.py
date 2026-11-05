@@ -14,7 +14,7 @@ from google.genai import types
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
-from geminirelay import ulaw
+from geminirelay import session, ulaw
 from geminirelay.server import make_server
 
 TOKEN = "test-token-0123456789"
@@ -85,6 +85,13 @@ async def recv_until(ws, kind: str, timeout=3.0) -> tuple[dict, list[dict]]:
         if msg["type"] == kind:
             return msg, seen
         seen.append(msg)
+
+
+async def ready(ws) -> None:
+    """펌웨어처럼 세션을 연다 (session.created → session.update → session.updated)"""
+    assert json.loads(await ws.recv())["type"] == "session.created"
+    await ws.send(json.dumps({"type": "session.update", "session": {"instructions": "x"}}))
+    await recv_until(ws, "session.updated")
 
 
 @pytest.fixture
@@ -240,5 +247,62 @@ def test_gemini_failure_reports_error(relay):
                 await gemini.turns.put([])  # 빈 턴 = Gemini 연결이 닫혔다
                 err, _ = await recv_until(ws, "error")
                 assert err["error"]["code"] == "upstream_error"
+
+    asyncio.run(go())
+
+
+def test_paces_ai_audio(relay, monkeypatch):
+    """Gemini 가 1초 분량을 한꺼번에 줘도 기기에는 실시간 속도로 (AUDIO_LEAD_S 만큼만 앞서) 간다"""
+    monkeypatch.setattr(session, "AUDIO_LEAD_S", 0.2)
+    running, _ = relay
+
+    async def go():
+        loop = asyncio.get_running_loop()
+        async with running() as (url, gemini):
+            async with connect(url, additional_headers={"Authorization": f"Bearer {TOKEN}"}) as ws:
+                await ready(ws)
+                await gemini.turns.put([gemini_audio(1.0, "네"),
+                                        types.LiveServerMessage(server_content=types.LiveServerContent(turn_complete=True))])
+                arrivals = []
+                while True:
+                    msg = json.loads(await asyncio.wait_for(ws.recv(), 3))
+                    if msg["type"] == "response.output_audio.delta":
+                        arrivals.append(loop.time())
+                    elif msg["type"] == "response.done":
+                        done_at = loop.time()
+                        break
+                assert len(arrivals) >= 9                      # 0.1초 조각 약 10개
+                assert arrivals[2] - arrivals[0] < 0.1         # 앞선 0.2초 + 첫 조각은 바로
+                assert 0.6 <= arrivals[-1] - arrivals[0] < 1.5  # 나머지는 0.1초마다 → 마지막은 약 0.7초 뒤
+                assert done_at >= arrivals[-1]                 # 대답 끝은 음성을 다 보낸 뒤
+
+    asyncio.run(go())
+
+
+def test_interrupt_drops_unsent_audio(relay, monkeypatch):
+    """상대가 끼어들면 아직 안 보낸 AI 음성은 버리고, 끼어듦 알림은 바로 간다"""
+    monkeypatch.setattr(session, "AUDIO_LEAD_S", 0.2)
+    running, data_dir = relay
+
+    async def go():
+        loop = asyncio.get_running_loop()
+        async with running() as (url, gemini):
+            async with connect(url, additional_headers={"Authorization": f"Bearer {TOKEN}"}) as ws:
+                await ready(ws)
+                await gemini.turns.put([gemini_audio(2.0)])  # 2초 = 0.1초 조각 20개
+                await recv_until(ws, "response.output_audio.delta")
+                await asyncio.sleep(0.3)
+                t = loop.time()
+                await gemini.turns.put([types.LiveServerMessage(server_content=types.LiveServerContent(interrupted=True))])
+                _, before = await recv_until(ws, "input_audio_buffer.speech_started")
+                assert loop.time() - t < 0.3
+                sent = 1 + sum(m["type"] == "response.output_audio.delta" for m in before)
+                assert sent <= 10
+                done, _ = await recv_until(ws, "response.done")
+                assert done["response"]["status"] == "cancelled"
+            await asyncio.sleep(0.2)
+        import wave
+        with wave.open(str(next(data_dir.glob("*_ai.wav")))) as w:
+            assert w.getnframes() == sent * 800  # 녹음도 기기로 실제 보낸 만큼만
 
     asyncio.run(go())
